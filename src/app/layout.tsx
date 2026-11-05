@@ -2,17 +2,17 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'AzTool - Chuẩn Hóa & Trộn Đề Thi Trắc Nghiệm ĐH Cửu Long',
+  title: 'AzTool — Nền Tảng AI & Công Cụ Thông Minh Đa Năng',
   description:
-    'AzTool (AzTool.vercel.app) - Hệ thống chuẩn hóa đề thi trắc nghiệm 1 nút bấm, bóc tách file Word sang khuôn chuẩn Đại học Cửu Long, tự động đánh dấu X phiếu trả lời, trộn mã đề tỷ lệ 25% và rà soát lỗi bằng AI Gemini.',
+    'AzTool (AzTool.vercel.app) - Hệ sinh thái công cụ thông minh tích hợp AI: kiểm định chất lượng tài liệu, chuẩn hóa đề thi 1 chạm, tự động đánh dấu phiếu trả lời và trộn mã đề cân bằng 25%.',
   keywords: [
     'AzTool',
     'AzTool.vercel.app',
+    'nền tảng công cụ thông minh',
     'chuẩn hóa đề thi',
     'trộn đề thi trắc nghiệm',
-    'đại học cửu long',
     'phiếu trả lời trắc nghiệm',
-    'gemini flash',
+    'AI năng suất',
   ],
 };
 

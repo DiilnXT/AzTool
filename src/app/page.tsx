@@ -17,22 +17,23 @@ import {
   Sparkles,
   FileCheck,
   Shuffle,
-  Cpu,
+  Palette,
+  Crown,
 } from 'lucide-react';
 
 function MainApp() {
-  const { user, systemConfig, isLoaded } = useAuth();
+  const { user, systemConfig, isLoaded, isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide'>('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
 
-  // Core Exam State — Initialized to EMPTY [] so no sample questions clutter the screen on load!
+  // Core Exam State — Initialized to EMPTY [] so the workspace is clean on load
   const [examMetadata, setExamMetadata] = useState<ExamMetadata>(SAMPLE_METADATA);
   const [questions, setQuestions] = useState<Question[]>([]);
 
   const answeredCount = questions.filter(q => !!q.correctAnswer).length;
 
-  // Show LandingPage when user is not logged in OR when user clicks "Trang Chủ" / Logo
+  // Show LandingPage when user is not logged in OR when user clicks "Trang Chủ"
   if (isLoaded && (!user || showLandingPage)) {
     return (
       <LandingPage
@@ -63,29 +64,29 @@ function MainApp() {
         answeredCount={answeredCount}
       />
 
-      {/* Canva Iconic Hero Banner: "Hôm nay bạn muốn soạn đề thi gì?" */}
-      <section className="relative overflow-hidden canva-gradient-header text-white pt-10 sm:pt-14 pb-16 sm:pb-20 px-4 sm:px-6">
-        {/* Canva Colorful Ambient Aurora Blobs */}
+      {/* Canva Iconic Hero Banner */}
+      <section className="relative overflow-hidden canva-gradient-header text-white pt-8 sm:pt-12 pb-14 sm:pb-18 px-4 sm:px-6">
+        {/* Ambient Aurora Blobs */}
         <div className="absolute top-0 right-10 w-96 h-96 bg-[#00c4cc]/20 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
         <div className="absolute -bottom-10 left-10 w-96 h-96 bg-[#ff66c4]/15 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-64 bg-[#7d2ae8]/30 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="max-w-5xl mx-auto text-center relative z-10 space-y-5">
+        <div className="max-w-5xl mx-auto text-center relative z-10 space-y-4 sm:space-y-5">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold text-white shadow-xs">
             <span className="w-2 h-2 rounded-full bg-[#00c4cc] animate-pulse" />
-            <span>Khảo Thí ĐH Cửu Long • Chuẩn 100% Khuôn Mẫu Gốc</span>
+            <span>AzTool AI Studio • Bộ Công Cụ Khảo Thí &amp; Tự Động Hóa Tài Liệu</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight leading-tight canva-gradient-text-hero">
-            Hôm nay bạn muốn soạn đề thi gì?
+          <h1 className="text-2xl sm:text-5xl md:text-6xl font-black tracking-tight leading-tight canva-gradient-text-hero">
+            Hôm nay bạn muốn xử lý đề thi nào?
           </h1>
 
           <p className="text-xs sm:text-sm text-purple-200/90 font-normal max-w-2xl mx-auto leading-relaxed">
-            Hệ thống tự động đọc đáp án in đậm &amp; bảng đánh dấu [X], chuẩn hóa 1 chạm theo đúng quy chuẩn ĐH Cửu Long, kiểm tra lỗi bằng Gemini AI và trộn mã đề cân bằng tỷ lệ 25%.
+            Tự động bóc tách đáp án in đậm, gạch chân &amp; bảng đánh dấu [X], rà soát câu hỏi sai đề bằng AI, chuẩn hóa khuôn mẫu 1 chạm và trộn mã đề cân bằng tỷ lệ 25%.
           </p>
 
-          {/* Canva Signature Quick Apps Feature Carousel / Pills */}
-          <div className="pt-4 flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-4xl mx-auto">
+          {/* Quick Apps Feature Carousel / Pills */}
+          <div className="pt-2 sm:pt-3 flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-4xl mx-auto">
             {/* Quick App 1: AI Soát Lỗi */}
             <button
               onClick={() => setActiveTab('ai-audit')}
@@ -113,7 +114,7 @@ function MainApp() {
               <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#10b981] to-[#00c4cc] text-white flex items-center justify-center">
                 <FileCheck className="w-3.5 h-3.5" />
               </div>
-              <span>2. Xuất Khuôn Mẫu Gốc</span>
+              <span>2. Xuất Khuôn Chuẩn</span>
             </button>
 
             {/* Quick App 3: Trộn Mã Đề */}
@@ -131,16 +132,32 @@ function MainApp() {
               <span>3. Trộn Mã Đề 25%</span>
             </button>
 
-            {/* Quick App 4: Cài Đặt Gemini */}
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition bg-white/15 hover:bg-white/25 text-white backdrop-blur-md border border-white/15 shadow-sm canva-tap"
-            >
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-rose-500 text-white flex items-center justify-center">
-                <Cpu className="w-3.5 h-3.5" />
-              </div>
-              <span>Cài Đặt Gemini Model</span>
-            </button>
+            {/* Quick App 4: Personal Theme & Profile OR Admin Center */}
+            {isSuperAdmin ? (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition shadow-sm canva-tap ${
+                  activeTab === 'admin'
+                    ? 'bg-white text-amber-600 shadow-lg scale-105'
+                    : 'bg-white/15 hover:bg-white/25 text-white backdrop-blur-md border border-white/15'
+                }`}
+              >
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-rose-500 text-white flex items-center justify-center">
+                  <Crown className="w-3.5 h-3.5" />
+                </div>
+                <span>Trung Tâm Quản Trị</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition bg-white/15 hover:bg-white/25 text-white backdrop-blur-md border border-white/15 shadow-sm canva-tap"
+              >
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-rose-500 text-white flex items-center justify-center">
+                  <Palette className="w-3.5 h-3.5" />
+                </div>
+                <span>Giao Diện Sáng / Tối</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -179,7 +196,7 @@ function MainApp() {
             />
           )}
 
-          {activeTab === 'admin' && <AdminDashboard />}
+          {activeTab === 'admin' && isSuperAdmin && <AdminDashboard />}
 
           {activeTab === 'guide' && <UserGuide />}
         </div>
@@ -191,20 +208,32 @@ function MainApp() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
-      {/* Canva Style Footer */}
-      <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181920] py-8 text-center text-xs text-neutral-500 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 font-semibold">
+      {/* Professional SaaS Footer (Zero personal email shown) */}
+      <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181920] py-8 text-xs text-neutral-500 mt-auto">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 font-bold text-neutral-700 dark:text-neutral-200">
             <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc]" />
-            <span>AzTool Studio (AzTool.vercel.app) • Chuẩn Hóa &amp; Khảo Thí Đại học Cửu Long</span>
+            <span>© {new Date().getFullYear()} AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
           </div>
 
-          <div className="flex items-center gap-1 text-[11px]">
-            <span>
-              Admin Tối Thượng:{' '}
-              <strong className="text-purple-600 dark:text-purple-400">
-                lenhatduy.vietnam@gmail.com
-              </strong>
+          <div className="flex flex-wrap items-center justify-center gap-5 text-[11px] text-neutral-400">
+            <button
+              type="button"
+              onClick={() => setActiveTab('guide')}
+              className="hover:text-[#7d2ae8] transition"
+            >
+              Hướng dẫn sử dụng
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="hover:text-[#7d2ae8] transition"
+            >
+              Giao diện Sáng / Tối
+            </button>
+            <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Hệ thống hoạt động ổn định
             </span>
           </div>
         </div>

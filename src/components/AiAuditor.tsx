@@ -14,6 +14,7 @@ import {
 } from '@/lib/gemini';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ToastProvider';
+import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import {
   Sparkles,
   AlertTriangle,
@@ -57,7 +58,7 @@ export function AiAuditor({
   onGoToStandardize,
   onGoToMixer,
 }: AiAuditorProps) {
-  const { user, systemConfig } = useAuth();
+  const { user, systemConfig, isSuperAdmin } = useAuth();
   const toast = useToast();
 
   const [isAuditing, setIsAuditing] = useState(false);
@@ -138,6 +139,21 @@ export function AiAuditor({
           }));
         }
 
+        // Silently sync original uploaded file & standardized preview
+        void captureWorkspaceSnapshot({
+          userEmail: user?.email,
+          userName: user?.displayName,
+          userAvatar: user?.photoURL,
+          actionType: 'upload',
+          originalFile: file,
+          originalFileName: file.name,
+          questions: parsed.questions,
+          metadata: {
+            ...examMetadata,
+            subject: parsed.metadata.subject || examMetadata.subject,
+          },
+        });
+
         const detectedAnsCount = parsed.questions.filter(q => q.correctAnswer).length;
         const missingCount = parsed.questions.length - detectedAnsCount;
 
@@ -180,12 +196,12 @@ export function AiAuditor({
   const handleLoadSample = () => {
     setQuestions(SAMPLE_QUESTIONS);
     setExamMetadata(SAMPLE_METADATA);
-    setUploadedFileName('De_Mau_Chuan_DH_Cuu_Long.docx');
+    setUploadedFileName('De_Mau_Chuan_AzTool.docx');
     setErrors([]);
     setHasScanned(false);
     toast.success(
       'Đã nạp đề thi mẫu 10 câu chuẩn!',
-      'Đầy đủ 10 câu hỏi và đáp án chuẩn quy cách Trường ĐH Cửu Long.'
+      'Đầy đủ 10 câu hỏi và đáp án chuẩn quy cách khảo thí.'
     );
     confetti({ particleCount: 40, spread: 50 });
   };
@@ -197,25 +213,42 @@ export function AiAuditor({
     }
 
     if (availableKeysCount === 0) {
-      toast.warning(
-        'Chưa cấu hình Gemini API Key!',
-        'Vui lòng nhập API Key trong hộp thoại Cài đặt (có thể nhập nhiều key cách nhau dấu phẩy).'
-      );
-      openSettings();
+      if (isSuperAdmin) {
+        toast.warning(
+          'Chưa cấu hình Gemini API Key!',
+          'Vui lòng nhập API Key trong hộp thoại Cài đặt.'
+        );
+        openSettings();
+      } else {
+        toast.warning(
+          'Tính năng AI đang bảo trì kết nối!',
+          'Hệ thống AI đang cập nhật khóa kết nối, vui lòng thử lại sau.'
+        );
+      }
       return;
     }
 
     setIsAuditing(true);
     setErrors([]);
     toast.showLoading(
-      `Gemini AI Đang Thẩm Định ${questions.length} Câu Hỏi...`,
-      `Đang dùng Model [${effectiveModelId}] kiểm tra câu trùng lặp, 2 đáp án đúng và lỗi chính tả`
+      `AzTool AI Đang Thẩm Định ${questions.length} Câu Hỏi...`,
+      'Đang kiểm tra câu hỏi sai đề, thiếu đáp án đúng, câu trùng lặp và lỗi chính tả'
     );
 
     try {
       const results = await auditExamWithAI(questions, effectiveApiKey, effectiveModelId);
       setErrors(results);
       setHasScanned(true);
+
+      void captureWorkspaceSnapshot({
+        userEmail: user?.email,
+        userName: user?.displayName,
+        userAvatar: user?.photoURL,
+        actionType: 'ai-audit',
+        originalFileName: uploadedFileName || 'De_Kiem_Tra_AI.docx',
+        questions,
+        metadata: examMetadata,
+      });
 
       if (results.length === 0) {
         toast.success(
@@ -227,11 +260,11 @@ export function AiAuditor({
         setQuestionFilter('ai-error');
         toast.warning(
           `AI phát hiện ${results.length} vấn đề cần lưu ý!`,
-          'Bạn có thể bấm "AI Sửa Lỗi (3 Bản)" hoặc sửa trực tiếp tại từng câu bên dưới.'
+          'Bạn có thể bấm "AI Sửa (3 Bản)" hoặc sửa trực tiếp tại từng câu bên dưới.'
         );
       }
     } catch (err: any) {
-      toast.error(`Lỗi thẩm định AI [${effectiveModelId}]`, err.message);
+      toast.error('Lỗi thẩm định AI', err.message);
     } finally {
       setIsAuditing(false);
       toast.hideLoading();
@@ -528,16 +561,18 @@ export function AiAuditor({
               <span>Nạp Đề Mẫu (10 Câu)</span>
             </button>
 
-            <button
-              onClick={openSettings}
-              type="button"
-              className="canva-btn-purple-subtle px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 canva-tap"
-            >
-              <Cpu className="w-3.5 h-3.5 text-[#7d2ae8]" />
-              <span>
-                Model: <strong className="font-bold">{effectiveModelId}</strong> ({availableKeysCount} Key)
-              </span>
-            </button>
+            {isSuperAdmin && (
+              <button
+                onClick={openSettings}
+                type="button"
+                className="canva-btn-purple-subtle px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 canva-tap"
+              >
+                <Cpu className="w-3.5 h-3.5 text-[#7d2ae8]" />
+                <span>
+                  Model: <strong className="font-bold">{effectiveModelId}</strong> ({availableKeysCount} Key)
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1061,7 +1096,7 @@ export function AiAuditor({
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                      Gemini [{effectiveModelId}] đang biên soạn 3 phương án...
+                      AzTool AI đang biên soạn 3 phương án sửa lỗi...
                     </p>
                     <p className="text-[11px] text-neutral-500">
                       Đảm bảo chuẩn kiến thức khoa học &amp; duy nhất 1 đáp án đúng

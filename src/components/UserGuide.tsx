@@ -24,7 +24,7 @@ export function UserGuide() {
         </h2>
 
         <p className="text-sm text-neutral-500 font-normal max-w-md mx-auto">
-          Chuẩn hóa 1 nút bấm, tạo mã đề và kiểm tra lỗi đề thi trắc nghiệm theo đúng quy cách khảo thí ĐH Cửu Long.
+          Chuẩn hóa 1 nút bấm, tạo mã đề và kiểm tra lỗi đề thi trắc nghiệm tự động trên nền tảng AzTool.
         </p>
       </div>
 
@@ -56,7 +56,7 @@ export function UserGuide() {
           </div>
           <h3 className="font-bold text-neutral-900 dark:text-white">Trộn &amp; Soát Lỗi AI</h3>
           <p className="text-neutral-500 leading-relaxed">
-            Xáo trộn câu và phương án với tỷ lệ 25% đều. Tự do cấu hình Model ID Gemini để quét lỗi và sửa 1 chạm.
+            Xáo trộn câu và phương án với tỷ lệ 25% đều. Hệ thống AI tự động quét lỗi chính tả, logic và sửa nhanh 1 chạm.
           </p>
         </div>
       </div>

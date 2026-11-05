@@ -5,9 +5,10 @@ import { UserProfile } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
-const STORAGE_USER_KEY = 'deq_current_user';
-const STORAGE_ALL_USERS_KEY = 'deq_user_database';
-const STORAGE_SYSTEM_CONFIG = 'deq_system_config';
+const STORAGE_USER_KEY = 'aztool_current_user';
+const STORAGE_ALL_USERS_KEY = 'aztool_user_database';
+const STORAGE_SYSTEM_CONFIG = 'aztool_system_config';
+const STORAGE_THEME_KEY = 'aztool_theme_mode';
 
 declare global {
   interface Window {
@@ -28,6 +29,9 @@ interface AuthContextType {
   user: UserProfile | null;
   allUsers: UserProfile[];
   systemConfig: SystemConfig;
+  theme: 'light' | 'dark';
+  setTheme: (mode: 'light' | 'dark') => void;
+  toggleTheme: () => void;
   isLoaded: boolean;
   isSuperAdmin: boolean;
   isAdmin: boolean;
@@ -35,6 +39,7 @@ interface AuthContextType {
   loginWithGoogle: (customEmail?: string, customName?: string, customAvatar?: string) => Promise<void>;
   loginWithRealGoogleOAuth: (overrideClientId?: string) => Promise<boolean>;
   logout: () => void;
+  updateDisplayName: (newName: string) => void;
   updateUserRole: (userId: string, newRole: UserProfile['role']) => void;
   deleteUser: (userId: string) => void;
   saveUserApiKey: (key: string) => void;
@@ -46,10 +51,12 @@ interface AuthContextType {
 const defaultSystemConfig: SystemConfig = {
   defaultGeminiApiKey: '',
   defaultGeminiModel: DEFAULT_MODEL_ID,
-  googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
-  announcement: 'Chào mừng quý thầy cô đến với AzTool Studio • Chuẩn hóa & Trộn đề thi trắc nghiệm ĐH Cửu Long',
+  googleClientId:
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+    '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
+  announcement: 'AzTool AI Studio • Nền tảng công cụ tự động hóa tài liệu, khảo thí & trợ lý AI thông minh',
   maintenanceMode: false,
-  defaultUniversity: 'TRƯỜNG ĐẠI HỌC CỬU LONG',
+  defaultUniversity: '',
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,9 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>(defaultSystemConfig);
+  const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load Google Identity Services Script (https://accounts.google.com/gsi/client)
+  // Load Google Identity Services Script
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const existingScript = document.getElementById('google-gsi-client');
@@ -74,19 +82,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const applyThemeToDom = (mode: 'light' | 'dark') => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (mode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  };
+
   useEffect(() => {
     try {
-      const storedConfig = localStorage.getItem(STORAGE_SYSTEM_CONFIG);
+      // Load theme preference
+      const savedTheme = localStorage.getItem(STORAGE_THEME_KEY) as 'light' | 'dark' | null;
+      const initialTheme = savedTheme === 'dark' ? 'dark' : 'light';
+      setThemeState(initialTheme);
+      applyThemeToDom(initialTheme);
+
+      // Load system config (fallback to legacy key if exists)
+      const storedConfig =
+        localStorage.getItem(STORAGE_SYSTEM_CONFIG) || localStorage.getItem('deq_system_config');
       if (storedConfig) {
         const parsedCfg = JSON.parse(storedConfig);
         setSystemConfig(prev => ({
           ...prev,
           ...parsedCfg,
-          googleClientId: parsedCfg.googleClientId || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+          googleClientId:
+            parsedCfg.googleClientId ||
+            process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+            '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
         }));
       }
 
-      const storedAllUsers = localStorage.getItem(STORAGE_ALL_USERS_KEY);
+      const storedAllUsers =
+        localStorage.getItem(STORAGE_ALL_USERS_KEY) || localStorage.getItem('deq_user_database');
       let usersList: UserProfile[] = [];
       if (storedAllUsers) {
         usersList = JSON.parse(storedAllUsers);
@@ -95,31 +125,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           {
             id: 'admin-001',
             email: SUPER_ADMIN_EMAIL,
-            displayName: 'Lê Nhật Duy (Admin Tối Thượng)',
+            displayName: 'Lê Nhật Duy',
             photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=duy',
             role: 'super_admin',
-            createdAt: '2024-01-01',
+            createdAt: '2025-01-01',
             lastActive: new Date().toISOString(),
             examsGeneratedCount: 120,
             mixCount: 85,
-          },
-          {
-            id: 'user-002',
-            email: 'gv_toan@mku.edu.vn',
-            displayName: 'Thầy Nguyễn Văn Toàn',
-            photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=toan',
-            role: 'pro',
-            createdAt: '2024-02-15',
-            lastActive: new Date().toISOString(),
-            examsGeneratedCount: 34,
-            mixCount: 20,
           },
         ];
         localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(usersList));
       }
       setAllUsers(usersList);
 
-      const storedUser = localStorage.getItem(STORAGE_USER_KEY);
+      const storedUser =
+        localStorage.getItem(STORAGE_USER_KEY) || localStorage.getItem('deq_current_user');
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
         if (parsed.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
@@ -134,6 +154,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setTheme = (mode: 'light' | 'dark') => {
+    setThemeState(mode);
+    applyThemeToDom(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_THEME_KEY, mode);
+    }
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : 'light');
+  };
+
   const saveAllUsers = (users: UserProfile[]) => {
     setAllUsers(users);
     localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(users));
@@ -144,10 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     customName?: string,
     customAvatar?: string
   ) => {
-    const email = customEmail || SUPER_ADMIN_EMAIL;
+    const email = (customEmail || '').trim();
     if (!email) return;
 
-    const lowerEmail = email.trim().toLowerCase();
+    const lowerEmail = email.toLowerCase();
     const isSuper = lowerEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
     let existing = allUsers.find(u => u.email.toLowerCase() === lowerEmail);
@@ -157,12 +189,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: lowerEmail,
         displayName:
           customName ||
-          (isSuper
-            ? 'Lê Nhật Duy (Admin Tối Thượng)'
-            : `Giảng viên (${lowerEmail.split('@')[0]})`),
+          (isSuper ? 'Lê Nhật Duy' : lowerEmail.split('@')[0]),
         photoURL:
           customAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${lowerEmail}`,
-        role: isSuper ? 'super_admin' : 'pro',
+        role: isSuper ? 'super_admin' : 'free',
         createdAt: new Date().toISOString(),
         lastActive: new Date().toISOString(),
         examsGeneratedCount: 0,
@@ -171,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const updated = [existing, ...allUsers];
       saveAllUsers(updated);
     } else {
-      if (isSuper) existing.role = 'super_admin';
+      existing.role = isSuper ? 'super_admin' : existing.role === 'super_admin' ? 'free' : existing.role;
       if (customName) existing.displayName = customName;
       if (customAvatar) existing.photoURL = customAvatar;
       existing.lastActive = new Date().toISOString();
@@ -182,15 +212,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(existing));
   };
 
-  /**
-   * Real Google OAuth 2.0 Login via Google Identity Services (https://accounts.google.com/gsi/client)
-   */
   const loginWithRealGoogleOAuth = async (overrideClientId?: string): Promise<boolean> => {
     const activeClientId = (
       overrideClientId ||
       systemConfig.googleClientId ||
       process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-      ''
+      '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com'
     ).trim();
 
     if (!activeClientId) {
@@ -199,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
       throw new Error(
-        'Thư viện Google Identity Services đang tải. Vui lòng thử lại sau 2 giây hoặc kiểm tra kết nối mạng.'
+        'Dịch vụ đăng nhập Google đang khởi tạo. Vui lòng thử lại sau 2 giây.'
       );
     }
 
@@ -210,11 +237,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           scope: 'openid email profile',
           callback: async (tokenResponse: any) => {
             if (tokenResponse?.error) {
-              reject(new Error(`Google OAuth Error: ${tokenResponse.error}`));
+              reject(new Error(`Google OAuth: ${tokenResponse.error}`));
               return;
             }
             if (!tokenResponse?.access_token) {
-              reject(new Error('Không nhận được access_token từ Google.'));
+              reject(new Error('Không nhận được xác thực từ Google.'));
               return;
             }
 
@@ -229,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               );
 
               if (!userInfoRes.ok) {
-                throw new Error('Không thể lấy thông tin tài khoản từ Google API.');
+                throw new Error('Không thể tải thông tin tài khoản Google.');
               }
 
               const profile = await userInfoRes.json();
@@ -255,6 +282,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem(STORAGE_USER_KEY);
+    localStorage.removeItem('deq_current_user');
+  };
+
+  const updateDisplayName = (newName: string) => {
+    if (!user || !newName.trim()) return;
+    const updatedUser = { ...user, displayName: newName.trim() };
+    setUser(updatedUser);
+    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedUser));
+    const updatedAll = allUsers.map(u => (u.id === user.id ? updatedUser : u));
+    saveAllUsers(updatedAll);
   };
 
   const updateUserRole = (userId: string, newRole: UserProfile['role']) => {
@@ -281,7 +318,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const deleteUser = (userId: string) => {
     const target = allUsers.find(u => u.id === userId);
     if (target?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
-      alert('Không thể xóa tài khoản Admin Tối Thượng!');
       return;
     }
     const updated = allUsers.filter(u => u.id !== userId);
@@ -331,10 +367,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isSuperAdmin =
-    user?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
-    user?.role === 'super_admin';
-  const isAdmin = isSuperAdmin || user?.role === 'admin';
-  const isPro = isSuperAdmin || isAdmin || user?.role === 'pro';
+    Boolean(user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+  const isAdmin = isSuperAdmin;
+  const isPro = isSuperAdmin || user?.role === 'pro';
 
   return (
     <AuthContext.Provider
@@ -342,6 +377,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         allUsers,
         systemConfig,
+        theme,
+        setTheme,
+        toggleTheme,
         isLoaded,
         isSuperAdmin,
         isAdmin,
@@ -349,6 +387,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         loginWithRealGoogleOAuth,
         logout,
+        updateDisplayName,
         updateUserRole,
         deleteUser,
         saveUserApiKey,

@@ -5,6 +5,7 @@ import { Question, ExamMetadata, MixedExam } from '@/types/exam';
 import { generateMixedExams, createMixedExamsZip } from '@/lib/exam-mixer';
 import { generateStandardDocx } from '@/lib/docx-generator';
 import { useAuth } from '@/lib/auth-context';
+import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import { useToast } from '@/components/ToastProvider';
 import { saveAs } from 'file-saver';
 import {
@@ -26,7 +27,7 @@ interface ExamMixerProps {
 }
 
 export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerProps) {
-  const { incrementUsage } = useAuth();
+  const { user, incrementUsage } = useAuth();
   const toast = useToast();
 
   const [numExams, setNumExams] = useState(4);
@@ -70,6 +71,20 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
         setMixedExams(results);
         setActiveCodeTab(results[0]?.code || '');
         incrementUsage('mix');
+
+        if (user) {
+          void captureWorkspaceSnapshot({
+            userEmail: user.email,
+            userName: user.displayName,
+            userAvatar: user.photoURL,
+            actionType: 'mix',
+            actionLabel: `Trộn ${results.length} mã đề (${customCodes.join(', ')})`,
+            originalFileName: `BoDeTron_${customCodes.join('_')}.docx`,
+            metadata: examMetadata,
+            questions,
+          });
+        }
+
         toast.success(
           `Đã tạo thành công ${results.length} mã đề!`,
           `Các mã đề: ${customCodes.join(', ')} • Sẵn sàng tải từng đề hoặc trọn bộ .ZIP`

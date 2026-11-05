@@ -1,7 +1,7 @@
 import { Question, ExamMetadata } from '@/types/exam';
 
 export const SAMPLE_METADATA: ExamMetadata = {
-  university: 'TRƯỜNG ĐẠI HỌC CỬU LONG',
+  university: 'TRƯỜNG ĐẠI HỌC / HỌC VIỆN',
   department: 'KHOA CÔNG NGHỆ THÔNG TIN',
   semester: 'I',
   academicYear: '2024-2025',

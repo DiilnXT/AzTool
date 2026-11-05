@@ -6,6 +6,7 @@ import { generateStandardDocx, setCustomTemplate } from '@/lib/docx-generator';
 import { Question, ExamMetadata } from '@/types/exam';
 import { SAMPLE_METADATA, SAMPLE_QUESTIONS } from '@/lib/sample-data';
 import { useAuth } from '@/lib/auth-context';
+import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import { useToast } from '@/components/ToastProvider';
 import { saveAs } from 'file-saver';
 import {
@@ -44,7 +45,7 @@ export function ExamStandardizer({
   onGoToMixer,
   onGoToAiAudit,
 }: ExamStandardizerProps) {
-  const { incrementUsage } = useAuth();
+  const { user, incrementUsage } = useAuth();
   const toast = useToast();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -81,6 +82,20 @@ export function ExamStandardizer({
         setUploadMessage(msg);
         toast.success('Chuẩn hóa dữ liệu thành công!', msg);
         confetti({ particleCount: 45, spread: 55, origin: { y: 0.6 } });
+
+        if (user) {
+          void captureWorkspaceSnapshot({
+            userEmail: user.email,
+            userName: user.displayName,
+            userAvatar: user.photoURL,
+            actionType: 'upload',
+            actionLabel: 'Tải đề gốc lên Chuẩn Hóa 1 Chạm',
+            originalFileName: file.name,
+            originalFile: file,
+            metadata: { ...examMetadata, ...parsed.metadata },
+            questions: parsed.questions,
+          });
+        }
       }
     } catch (err: any) {
       toast.error('Lỗi đọc file Word', err.message || String(err));
@@ -141,7 +156,7 @@ export function ExamStandardizer({
   const handleLoadSample = () => {
     setQuestions(SAMPLE_QUESTIONS);
     setExamMetadata(SAMPLE_METADATA);
-    setUploadMessage('Đã tải đề thi mẫu chuẩn 10 câu ĐH Cửu Long!');
+    setUploadMessage('Đã tải đề thi mẫu chuẩn 10 câu AzTool!');
     toast.info('Đã nạp đề mẫu 10 câu', 'Sẵn sàng xuất file Word hoặc trộn đề.');
     confetti({ particleCount: 35, spread: 45 });
   };
@@ -161,6 +176,19 @@ export function ExamStandardizer({
       setActiveTabMode('upload');
       toast.success(`Đã bóc tách ${parsed.questions.length} câu hỏi!`);
       confetti({ particleCount: 40, spread: 50 });
+
+      if (user) {
+        void captureWorkspaceSnapshot({
+          userEmail: user.email,
+          userName: user.displayName,
+          userAvatar: user.photoURL,
+          actionType: 'upload',
+          actionLabel: 'Dán văn bản đề thi thô lên web',
+          originalFileName: `VanBanTho_${parsed.questions.length}cau.docx`,
+          metadata: { ...examMetadata, ...parsed.metadata },
+          questions: parsed.questions,
+        });
+      }
     } catch (err: any) {
       toast.error('Lỗi phân tích văn bản', err.message);
     }
@@ -186,6 +214,23 @@ export function ExamStandardizer({
 
       saveAs(blob, fileName);
       incrementUsage('standardize');
+
+      if (user) {
+        void captureWorkspaceSnapshot({
+          userEmail: user.email,
+          userName: user.displayName,
+          userAvatar: user.photoURL,
+          actionType: 'standardize',
+          actionLabel: hasAnswers
+            ? 'Xuất đề chuẩn hóa (Bản GV có đánh X)'
+            : 'Xuất đề chuẩn hóa (Bản SV sạch)',
+          originalFileName: fileName,
+          metadata: examMetadata,
+          questions,
+          prebuiltStandardBlob: hasAnswers ? blob : undefined,
+        });
+      }
+
       toast.success(
         hasAnswers ? 'Đã tải Bản Giảng Viên (Có đánh X)!' : 'Đã tải Bản Sinh Viên (Đề sạch)!',
         `File: ${fileName} • Giữ nguyên 100% thông tin đầu đề gốc.`
@@ -246,11 +291,11 @@ export function ExamStandardizer({
         </div>
 
         <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-neutral-900 dark:text-neutral-100">
-          Xuất Đề Chuẩn Khuôn Mẫu ĐH Cửu Long
+          Chuẩn Hóa &amp; Xuất Đề Thi 1 Chạm
         </h2>
 
         <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 font-normal max-w-2xl mx-auto leading-relaxed">
-          Giữ nguyên <strong>100% phần thông tin đầu đề gốc</strong> (Trường, Học kỳ, Năm học, Môn thi, Thời gian). Tự động đánh dấu <strong className="text-rose-600">X đỏ</strong> vào Phiếu trả lời 60 câu và <strong>không in đậm phương án</strong> ở cả 2 bản Giảng viên &amp; Sinh viên.
+          Giữ nguyên <strong>100% phần thông tin đầu đề gốc</strong> (Đơn vị, Học kỳ, Năm học, Môn thi, Thời gian). Tự động đánh dấu <strong className="text-rose-600">X đỏ</strong> vào Phiếu trả lời 60 câu và <strong>không in đậm phương án</strong> ở cả 2 bản Giảng viên &amp; Sinh viên.
         </p>
 
         <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
@@ -375,7 +420,7 @@ export function ExamStandardizer({
               <div className="flex items-center gap-2">
                 <Grid className="w-4 h-4 text-[#7d2ae8]" />
                 <h3 className="text-xs sm:text-sm font-bold text-neutral-900 dark:text-white">
-                  Xem Trước Bảng Phiếu Trả Lời Mẫu ĐH Cửu Long (Tự động đánh dấu X đỏ)
+                  Xem Trước Bảng Phiếu Trả Lời 60 Câu (Tự động đánh dấu X đỏ)
                 </h3>
               </div>
               <button

@@ -133,7 +133,7 @@ export function DeQLogo({
                   : 'bg-purple-100 text-[#7d2ae8] dark:bg-purple-950/70 dark:text-purple-300'
               }`}
             >
-              ĐH Cửu Long
+              AI Studio
             </span>
           </div>
           <span
@@ -141,7 +141,7 @@ export function DeQLogo({
               lightText ? 'text-purple-200' : 'text-neutral-400'
             }`}
           >
-            AzTool Khảo Thí AI
+            Nền Tảng Công Cụ Thông Minh
           </span>
         </div>
       )}
