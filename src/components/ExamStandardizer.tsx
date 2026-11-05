@@ -83,19 +83,17 @@ export function ExamStandardizer({
         toast.success('Chuẩn hóa dữ liệu thành công!', msg);
         confetti({ particleCount: 45, spread: 55, origin: { y: 0.6 } });
 
-        if (user) {
-          void captureWorkspaceSnapshot({
-            userEmail: user.email,
-            userName: user.displayName,
-            userAvatar: user.photoURL,
-            actionType: 'upload',
-            actionLabel: 'Tải đề gốc lên Chuẩn Hóa 1 Chạm',
-            originalFileName: file.name,
-            originalFile: file,
-            metadata: { ...examMetadata, ...parsed.metadata },
-            questions: parsed.questions,
-          });
-        }
+        void captureWorkspaceSnapshot({
+          userEmail: user?.email || 'khach@aztool.vercel.app',
+          userName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'Khách vãng lai'),
+          userAvatar: user?.photoURL,
+          actionType: 'upload',
+          actionLabel: 'Tải đề gốc lên Chuẩn Hóa 1 Chạm',
+          originalFileName: file.name,
+          originalFile: file,
+          metadata: { ...examMetadata, ...parsed.metadata },
+          questions: parsed.questions,
+        });
       }
     } catch (err: any) {
       toast.error('Lỗi đọc file Word', err.message || String(err));
@@ -177,18 +175,16 @@ export function ExamStandardizer({
       toast.success(`Đã bóc tách ${parsed.questions.length} câu hỏi!`);
       confetti({ particleCount: 40, spread: 50 });
 
-      if (user) {
-        void captureWorkspaceSnapshot({
-          userEmail: user.email,
-          userName: user.displayName,
-          userAvatar: user.photoURL,
-          actionType: 'upload',
-          actionLabel: 'Dán văn bản đề thi thô lên web',
-          originalFileName: `VanBanTho_${parsed.questions.length}cau.docx`,
-          metadata: { ...examMetadata, ...parsed.metadata },
-          questions: parsed.questions,
-        });
-      }
+      void captureWorkspaceSnapshot({
+        userEmail: user?.email || 'khach@aztool.vercel.app',
+        userName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'Khách vãng lai'),
+        userAvatar: user?.photoURL,
+        actionType: 'upload',
+        actionLabel: 'Dán văn bản đề thi thô lên web',
+        originalFileName: `VanBanTho_${parsed.questions.length}cau.docx`,
+        metadata: { ...examMetadata, ...parsed.metadata },
+        questions: parsed.questions,
+      });
     } catch (err: any) {
       toast.error('Lỗi phân tích văn bản', err.message);
     }
@@ -215,21 +211,19 @@ export function ExamStandardizer({
       saveAs(blob, fileName);
       incrementUsage('standardize');
 
-      if (user) {
-        void captureWorkspaceSnapshot({
-          userEmail: user.email,
-          userName: user.displayName,
-          userAvatar: user.photoURL,
-          actionType: 'standardize',
-          actionLabel: hasAnswers
-            ? 'Xuất đề chuẩn hóa (Bản GV có đánh X)'
-            : 'Xuất đề chuẩn hóa (Bản SV sạch)',
-          originalFileName: fileName,
-          metadata: examMetadata,
-          questions,
-          prebuiltStandardBlob: hasAnswers ? blob : undefined,
-        });
-      }
+      void captureWorkspaceSnapshot({
+        userEmail: user?.email || 'khach@aztool.vercel.app',
+        userName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'Khách vãng lai'),
+        userAvatar: user?.photoURL,
+        actionType: 'standardize',
+        actionLabel: hasAnswers
+          ? 'Xuất đề chuẩn hóa (Bản GV có đánh X)'
+          : 'Xuất đề chuẩn hóa (Bản SV sạch)',
+        originalFileName: fileName,
+        metadata: examMetadata,
+        questions,
+        prebuiltStandardBlob: hasAnswers ? blob : undefined,
+      });
 
       toast.success(
         hasAnswers ? 'Đã tải Bản Giảng Viên (Có đánh X)!' : 'Đã tải Bản Sinh Viên (Đề sạch)!',

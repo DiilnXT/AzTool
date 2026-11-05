@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, SUPER_ADMIN_EMAIL } from '@/lib/auth-context';
 import { useToast } from '@/components/ToastProvider';
-import { UserProfile } from '@/types/exam';
+import { UserProfile, TabPermissions } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 import { generateStandardDocx } from '@/lib/docx-generator';
 import {
@@ -39,7 +39,12 @@ import {
   Filter,
   X,
   HardDrive,
-  UserCheck,
+  Lock,
+  Unlock,
+  KeyRound,
+  FileCheck,
+  Shuffle,
+  ShieldAlert,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -48,13 +53,16 @@ export function AdminDashboard() {
     allUsers,
     systemConfig,
     isSuperAdmin,
-    updateUserRole,
+    permissionsMap,
+    updateUserPermissions,
+    grantAllPermissions,
+    revokeAllPermissions,
     deleteUser,
     updateSystemConfig,
   } = useAuth();
   const toast = useToast();
 
-  const [activeSubTab, setActiveSubTab] = useState<'vault' | 'users' | 'settings'>('vault');
+  const [activeSubTab, setActiveSubTab] = useState<'permissions' | 'vault' | 'settings'>('permissions');
 
   // Vault state
   const [snapshots, setSnapshots] = useState<WorkspaceSnapshotItem[]>([]);
@@ -68,12 +76,14 @@ export function AdminDashboard() {
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'UNVIEWED' | 'VIEWED'>('ALL');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewItem, setPreviewItem] = useState<WorkspaceSnapshotItem | null>(null);
-  const [newTargetEmail, setNewTargetEmail] = useState('');
 
-  // User management state
-  const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<UserProfile['role']>('pro');
+  // User permission management state
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [addTeacherEmail, setAddTeacherEmail] = useState('');
+  const [addTeacherName, setAddTeacherName] = useState('');
+  const [addPermAudit, setAddPermAudit] = useState(true);
+  const [addPermStandardize, setAddPermStandardize] = useState(true);
+  const [addPermMix, setAddPermMix] = useState(true);
 
   // System settings state
   const [apiKeyInput, setApiKeyInput] = useState(systemConfig.defaultGeminiApiKey || '');
@@ -110,13 +120,62 @@ export function AdminDashboard() {
           Khu Vực Quản Trị Hệ Thống
         </h2>
         <p className="text-xs text-neutral-400 mt-1">
-          Bạn không có quyền truy cập khu vực này.
+          Chỉ dành riêng cho Admin Duy (lenhatduy.vietnam@gmail.com).
         </p>
       </div>
     );
   }
 
-  // Policy handlers
+  // --- PERMISSION HANDLERS ---
+  const handleTogglePerm = async (email: string, key: keyof TabPermissions) => {
+    const norm = email.toLowerCase();
+    if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return; // Admin always has full perms
+
+    const current: TabPermissions = permissionsMap[norm] || {
+      canAudit: false,
+      canStandardize: false,
+      canMix: false,
+    };
+
+    const updated: TabPermissions = {
+      ...current,
+      [key]: !current[key],
+    };
+
+    await updateUserPermissions(norm, updated);
+    toast.info('Đã cập nhật quyền truy cập', `${norm} • ${key}: ${updated[key] ? 'BẬT' : 'TẮT'}`);
+  };
+
+  const handleGrantAll = async (email: string) => {
+    await grantAllPermissions(email);
+    toast.success('Đã cấp toàn bộ quyền!', `Tài khoản ${email} có thể sử dụng tất cả các tab.`);
+    confetti({ particleCount: 30, spread: 45 });
+  };
+
+  const handleRevokeAll = async (email: string) => {
+    await revokeAllPermissions(email);
+    toast.warning('Đã khóa toàn bộ quyền!', `Tài khoản ${email} bị chặn khỏi tất cả các tab tính năng.`);
+  };
+
+  const handleAddNewTeacherWithPerms = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addTeacherEmail.trim()) return;
+
+    const email = addTeacherEmail.trim().toLowerCase();
+    const newPerms: TabPermissions = {
+      canAudit: addPermAudit,
+      canStandardize: addPermStandardize,
+      canMix: addPermMix,
+    };
+
+    await updateUserPermissions(email, newPerms);
+    setAddTeacherEmail('');
+    setAddTeacherName('');
+    toast.success('Đã thiết lập quyền cho giáo viên!', `Email: ${email}`);
+    confetti({ particleCount: 40, spread: 50 });
+  };
+
+  // --- VAULT HANDLERS ---
   const handlePolicyModeChange = (mode: WorkspaceSyncPolicy['mode']) => {
     const updated: WorkspaceSyncPolicy = {
       ...syncPolicy,
@@ -124,57 +183,14 @@ export function AdminDashboard() {
     };
     setSyncPolicy(updated);
     saveSyncPolicy(updated);
-    const modeLabel =
-      mode === 'all'
-        ? 'Lưu tự động tất cả giáo viên'
-        : mode === 'selected'
-        ? 'Chỉ lưu các giáo viên được chọn'
-        : 'Đã tạm dừng lưu trữ';
-    toast.success('Đã cập nhật chế độ lưu đề!', modeLabel);
+    toast.success('Đã cập nhật chế độ lưu đề!');
   };
 
-  const handleToggleTrackedEmail = (email: string) => {
-    const normalized = email.trim().toLowerCase();
-    const exists = syncPolicy.selectedEmails.some(e => e.toLowerCase() === normalized);
-    const updatedEmails = exists
-      ? syncPolicy.selectedEmails.filter(e => e.toLowerCase() !== normalized)
-      : [...syncPolicy.selectedEmails, normalized];
-
-    const updated: WorkspaceSyncPolicy = {
-      ...syncPolicy,
-      selectedEmails: updatedEmails,
-    };
-    setSyncPolicy(updated);
-    saveSyncPolicy(updated);
-    toast.info(
-      exists ? 'Đã bỏ chọn theo dõi' : 'Đã thêm vào danh sách theo dõi',
-      normalized
-    );
-  };
-
-  const handleAddTargetEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTargetEmail.trim()) return;
-    const normalized = newTargetEmail.trim().toLowerCase();
-    if (!syncPolicy.selectedEmails.includes(normalized)) {
-      const updated: WorkspaceSyncPolicy = {
-        mode: 'selected',
-        selectedEmails: [...syncPolicy.selectedEmails, normalized],
-      };
-      setSyncPolicy(updated);
-      saveSyncPolicy(updated);
-      toast.success('Đã thêm email theo dõi!', normalized);
-    }
-    setNewTargetEmail('');
-  };
-
-  // Download handlers
   const handleDownloadOriginal = async (item: WorkspaceSnapshotItem) => {
     try {
       if (item.originalBlob) {
         saveAs(item.originalBlob, item.originalFileName || `FileGoc_${item.id}.docx`);
       } else {
-        // Fallback: generate from captured questions if user pasted raw text
         const fallbackBlob = await generateStandardDocx(
           item.metadata,
           item.questionsPreview,
@@ -226,7 +242,6 @@ export function AdminDashboard() {
     }
   };
 
-  // Delete handlers
   const handleDeleteSingle = async (id: string) => {
     await removeWorkspaceSnapshots([id]);
     setSnapshots(prev => prev.filter(s => s.id !== id));
@@ -241,7 +256,7 @@ export function AdminDashboard() {
     await removeWorkspaceSnapshots(selectedIds);
     setSnapshots(prev => prev.filter(s => !selectedIds.includes(s.id)));
     setSelectedIds([]);
-    toast.success(`Đã xóa ${count} đề thi đã chọn!`, 'Dung lượng lưu trữ đã được giải phóng.');
+    toast.success(`Đã xóa ${count} đề thi đã chọn!`);
   };
 
   const handleDeleteAllViewed = async () => {
@@ -265,7 +280,7 @@ export function AdminDashboard() {
     toast.success('Đã làm sạch toàn bộ kho lưu trữ đề thi!');
   };
 
-  // Filtering
+  // Filter Snapshots
   const uniqueEmails = Array.from(new Set(snapshots.map(s => s.userEmail)));
   const filteredSnapshots = snapshots.filter(item => {
     if (filterEmail !== 'ALL' && item.userEmail !== filterEmail) return false;
@@ -297,45 +312,18 @@ export function AdminDashboard() {
     );
   };
 
-  const totalStorageBytes = snapshots.reduce(
-    (sum, s) => sum + (s.sizeBytes || 0),
-    0
-  );
+  const totalStorageBytes = snapshots.reduce((sum, s) => sum + (s.sizeBytes || 0), 0);
   const totalStorageMB = (totalStorageBytes / (1024 * 1024)).toFixed(2);
   const unviewedCount = snapshots.filter(s => !s.isViewed).length;
 
-  // User Form Handler
-  const handleAddUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmail.trim()) return;
+  // Filter Teachers for Permissions Tab
+  const filteredUsers = allUsers.filter(u => {
+    if (!userSearchQuery.trim()) return true;
+    const q = userSearchQuery.toLowerCase();
+    return u.displayName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
 
-    const email = newEmail.trim().toLowerCase();
-    const existing = allUsers.find(u => u.email.toLowerCase() === email);
-    if (existing) {
-      toast.warning('Tài khoản đã tồn tại!', `Email ${email} đã có trong danh sách.`);
-      return;
-    }
-
-    const newUser: UserProfile = {
-      id: `user-${Date.now()}`,
-      email,
-      displayName: newName.trim() || `Thành viên (${email.split('@')[0]})`,
-      photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-      role: newRole,
-      createdAt: new Date().toISOString().split('T')[0],
-      lastActive: new Date().toISOString(),
-      examsGeneratedCount: 0,
-      mixCount: 0,
-    };
-
-    updateUserRole(newUser.id, newRole);
-    setNewEmail('');
-    setNewName('');
-    toast.success('Đã thêm người dùng!', `Email ${email} đã được kích hoạt.`);
-    confetti({ particleCount: 35, spread: 45 });
-  };
-
-  // System Config Handler
+  // Config save
   const handleSaveConfig = () => {
     updateSystemConfig({
       defaultGeminiApiKey: apiKeyInput.trim(),
@@ -350,35 +338,6 @@ export function AdminDashboard() {
     confetti({ particleCount: 30, spread: 40 });
   };
 
-  const getActionBadge = (type: WorkspaceSnapshotItem['actionType'], label: string) => {
-    switch (type) {
-      case 'upload':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-            📥 {label}
-          </span>
-        );
-      case 'standardize':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-            ✨ {label}
-          </span>
-        );
-      case 'mix':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-[#7d2ae8] dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-            🔀 {label}
-          </span>
-        );
-      case 'ai-audit':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-            🤖 {label}
-          </span>
-        );
-    }
-  };
-
   return (
     <div className="space-y-6 py-2 max-w-5xl mx-auto">
       {/* Executive Header */}
@@ -389,15 +348,27 @@ export function AdminDashboard() {
             <span>TRUNG TÂM ĐIỀU HÀNH ADMIN • DUY LÊ</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-neutral-900 dark:text-white">
-            Quản Trị &amp; Đối Soát Dữ Liệu AzTool
+            Quản Trị Phân Quyền &amp; Kho Đề Thi AzTool
           </h2>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Tự động lưu trữ bản gốc &amp; bản chuẩn hóa (.docx) của mọi đề thi tải lên hệ thống kèm thời gian chính xác tới từng giây.
+            Cấp quyền riêng biệt từng tab tính năng cho từng Gmail và tự động sao lưu mọi đề thi tải lên.
           </p>
         </div>
 
         {/* Sub-navigation Tabs */}
         <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/90 dark:bg-neutral-900/90 border border-neutral-200 dark:border-neutral-800 shadow-xs self-start sm:self-center">
+          <button
+            onClick={() => setActiveSubTab('permissions')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition canva-tap ${
+              activeSubTab === 'permissions'
+                ? 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white shadow-xs'
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>Phân Quyền Tab ({allUsers.length})</span>
+          </button>
+
           <button
             onClick={() => setActiveSubTab('vault')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition canva-tap ${
@@ -416,18 +387,6 @@ export function AdminDashboard() {
           </button>
 
           <button
-            onClick={() => setActiveSubTab('users')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition canva-tap ${
-              activeSubTab === 'users'
-                ? 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white shadow-xs'
-                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Giáo Viên ({allUsers.length})</span>
-          </button>
-
-          <button
             onClick={() => setActiveSubTab('settings')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition canva-tap ${
               activeSubTab === 'settings'
@@ -436,13 +395,315 @@ export function AdminDashboard() {
             }`}
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>Cấu Hình AI &amp; Key</span>
+            <span>Cấu Hình Hệ Thống</span>
           </button>
         </div>
       </div>
 
       {/* ===================================================================== */}
-      {/* TAB 1: KHO LƯU TRỮ & ĐỐI SOÁT ĐỀ THI (DOCUMENT VAULT)                 */}
+      {/* TAB 1: PHÂN QUYỀN SỬ DỤNG THEO TỪNG TAB CHO TỪNG GMAIL               */}
+      {/* ===================================================================== */}
+      {activeSubTab === 'permissions' && (
+        <div className="space-y-6 tab-enter">
+          {/* Quick Add Teacher & Pre-Grant Permissions Card */}
+          <div className="canva-card p-6 space-y-4 shadow-xs border border-neutral-200/90 dark:border-neutral-800">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
+              <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-[#7d2ae8]" />
+                <span>Thêm Gmail &amp; Cấp Quyền Tab Trước Cho Giáo Viên</span>
+              </h3>
+              <span className="text-[11px] text-neutral-400">
+                Chỉ những Gmail được bật quyền ở đây mới có thể sử dụng tab tương ứng!
+              </span>
+            </div>
+
+            <form onSubmit={handleAddNewTeacherWithPerms} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="email"
+                  required
+                  placeholder="Nhập địa chỉ Gmail giáo viên (VD: thaynam@gmail.com)..."
+                  value={addTeacherEmail}
+                  onChange={e => setAddTeacherEmail(e.target.value)}
+                  className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
+                />
+                <input
+                  type="text"
+                  placeholder="Tên giáo viên (tùy chọn)..."
+                  value={addTeacherName}
+                  onChange={e => setAddTeacherName(e.target.value)}
+                  className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
+                />
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/80 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-4">
+                  <span className="font-bold text-neutral-700 dark:text-neutral-300">
+                    Cấp quyền các tab:
+                  </span>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addPermAudit}
+                      onChange={e => setAddPermAudit(e.target.checked)}
+                      className="rounded text-[#7d2ae8] w-4 h-4"
+                    />
+                    <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                      1. AI Soát Lỗi Đề
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addPermStandardize}
+                      onChange={e => setAddPermStandardize(e.target.checked)}
+                      className="rounded text-[#7d2ae8] w-4 h-4"
+                    />
+                    <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                      2. Chuẩn Hóa 1 Chạm
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addPermMix}
+                      onChange={e => setAddPermMix(e.target.checked)}
+                      className="rounded text-[#7d2ae8] w-4 h-4"
+                    />
+                    <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                      3. Trộn Mã Đề 25%
+                    </span>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  className="canva-btn-primary px-5 py-2.5 rounded-xl font-bold transition canva-tap flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Kích Hoạt Quyền Cho Gmail Này</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Granular Permissions Table */}
+          <div className="canva-card p-6 space-y-4 shadow-xs border border-neutral-200/90 dark:border-neutral-800">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#7d2ae8]" />
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  Bảng Quản Lý Quyền Từng Tab Cho Từng Giáo Viên
+                </h3>
+              </div>
+
+              <div className="relative min-w-[240px]">
+                <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={e => setUserSearchQuery(e.target.value)}
+                  placeholder="Tìm theo tên hoặc email giáo viên..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-400 font-semibold bg-neutral-50/50 dark:bg-neutral-900/40">
+                    <th className="py-3 px-3">Tài khoản giáo viên</th>
+                    <th className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1 text-[#00c4cc]">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>AI Soát Lỗi</span>
+                      </div>
+                    </th>
+                    <th className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1 text-emerald-600">
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span>Chuẩn Hóa 1 Chạm</span>
+                      </div>
+                    </th>
+                    <th className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1 text-purple-600">
+                        <Shuffle className="w-3.5 h-3.5" />
+                        <span>Trộn Mã Đề</span>
+                      </div>
+                    </th>
+                    <th className="py-3 px-3 text-right">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                  {filteredUsers.map(u => {
+                    const isSuper = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+                    const perms: TabPermissions = isSuper
+                      ? { canAudit: true, canStandardize: true, canMix: true }
+                      : permissionsMap[u.email.toLowerCase()] ||
+                        u.permissions || { canAudit: false, canStandardize: false, canMix: false };
+
+                    return (
+                      <tr
+                        key={u.id || u.email}
+                        className="hover:bg-purple-50/30 dark:hover:bg-neutral-800/30 transition"
+                      >
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={
+                                u.photoURL ||
+                                `https://api.dicebear.com/7.x/initials/svg?seed=${u.email}`
+                              }
+                              alt=""
+                              className="w-8 h-8 rounded-full border border-neutral-200 shrink-0"
+                            />
+                            <div>
+                              <div className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                                <span>{u.displayName}</span>
+                                {isSuper && (
+                                  <span className="px-2 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white">
+                                    ADMIN DUY
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-mono text-[11px] text-neutral-400">
+                                {u.email}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Col 1: AI Audit */}
+                        <td className="py-3.5 px-3 text-center">
+                          {isSuper ? (
+                            <span className="text-emerald-600 font-black text-xs">Vĩnh Viễn</span>
+                          ) : (
+                            <button
+                              onClick={() => void handleTogglePerm(u.email, 'canAudit')}
+                              className={`px-3 py-1 rounded-xl font-bold text-xs transition canva-tap flex items-center gap-1 mx-auto ${
+                                perms.canAudit
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800'
+                              }`}
+                            >
+                              {perms.canAudit ? (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Được dùng</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>Bị khóa</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Col 2: Standardize */}
+                        <td className="py-3.5 px-3 text-center">
+                          {isSuper ? (
+                            <span className="text-emerald-600 font-black text-xs">Vĩnh Viễn</span>
+                          ) : (
+                            <button
+                              onClick={() => void handleTogglePerm(u.email, 'canStandardize')}
+                              className={`px-3 py-1 rounded-xl font-bold text-xs transition canva-tap flex items-center gap-1 mx-auto ${
+                                perms.canStandardize
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800'
+                              }`}
+                            >
+                              {perms.canStandardize ? (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Được dùng</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>Bị khóa</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Col 3: Mix */}
+                        <td className="py-3.5 px-3 text-center">
+                          {isSuper ? (
+                            <span className="text-emerald-600 font-black text-xs">Vĩnh Viễn</span>
+                          ) : (
+                            <button
+                              onClick={() => void handleTogglePerm(u.email, 'canMix')}
+                              className={`px-3 py-1 rounded-xl font-bold text-xs transition canva-tap flex items-center gap-1 mx-auto ${
+                                perms.canMix
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800'
+                              }`}
+                            >
+                              {perms.canMix ? (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Được dùng</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>Bị khóa</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Col 4: Quick Actions */}
+                        <td className="py-3.5 px-3 text-right">
+                          {!isSuper && (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => void handleGrantAll(u.email)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 font-bold text-[10px] hover:bg-emerald-100 transition"
+                                title="Bật tất cả các tab cho giáo viên này"
+                              >
+                                Cấp hết
+                              </button>
+                              <button
+                                onClick={() => void handleRevokeAll(u.email)}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 font-bold text-[10px] hover:bg-amber-100 transition"
+                                title="Khóa tất cả các tab của giáo viên này"
+                              >
+                                Khóa hết
+                              </button>
+                              <button
+                                onClick={() => {
+                                  deleteUser(u.id);
+                                  toast.info('Đã xóa khỏi danh sách', u.email);
+                                }}
+                                className="p-1 rounded-lg text-neutral-400 hover:text-rose-500 transition"
+                                title="Xóa tài khoản"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 2: KHO LƯU TRỮ & ĐỐI SOÁT ĐỀ THI (VAULT)                         */}
       {/* ===================================================================== */}
       {activeSubTab === 'vault' && (
         <div className="space-y-5 tab-enter">
@@ -459,7 +720,7 @@ export function AdminDashboard() {
                 </div>
                 <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Hoạt động ngầm 100%
+                  Lưu trữ đám mây + Bộ nhớ đệm ngầm
                 </span>
               </div>
 
@@ -487,10 +748,10 @@ export function AdminDashboard() {
                   }`}
                 >
                   <div className="font-bold">
-                    2. Chỉ giáo viên tôi chọn ({syncPolicy.selectedEmails.length})
+                    2. Chỉ giáo viên có quyền
                   </div>
                   <div className="text-[10px] opacity-80 mt-0.5">
-                    Chỉ lưu đề của các email nằm trong danh sách chỉ định
+                    Chỉ lưu đề của các email đã được duyệt quyền sử dụng
                   </div>
                 </button>
 
@@ -504,54 +765,10 @@ export function AdminDashboard() {
                 >
                   <div className="font-bold">3. Tạm dừng lưu</div>
                   <div className="text-[10px] opacity-80 mt-0.5">
-                    Tạm ngưng lưu thêm đề mới vào bộ nhớ
+                    Tạm ngưng ghi nhận đề mới vào kho
                   </div>
                 </button>
               </div>
-
-              {syncPolicy.mode === 'selected' && (
-                <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 space-y-2">
-                  <form onSubmit={handleAddTargetEmail} className="flex gap-2">
-                    <input
-                      type="email"
-                      value={newTargetEmail}
-                      onChange={e => setNewTargetEmail(e.target.value)}
-                      placeholder="Nhập email giáo viên cần theo dõi (VD: giaovien@gmail.com)..."
-                      className="flex-1 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
-                    />
-                    <button
-                      type="submit"
-                      className="canva-btn-primary px-3.5 py-1.5 rounded-xl text-xs font-bold"
-                    >
-                      + Thêm Email
-                    </button>
-                  </form>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {syncPolicy.selectedEmails.length === 0 ? (
-                      <span className="text-[11px] text-amber-600">
-                        Chưa có email nào được chọn. Hãy thêm email ở trên hoặc bật tại tab Giáo Viên.
-                      </span>
-                    ) : (
-                      syncPolicy.selectedEmails.map(email => (
-                        <span
-                          key={email}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-950/70 text-[#7d2ae8] dark:text-purple-300 text-[11px] font-semibold"
-                        >
-                          <UserCheck className="w-3 h-3" />
-                          <span>{email}</span>
-                          <button
-                            onClick={() => handleToggleTrackedEmail(email)}
-                            className="hover:text-rose-500"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Storage & Quick Cleanup Card */}
@@ -666,16 +883,16 @@ export function AdminDashboard() {
           {/* Snapshots List */}
           {isLoadingVault ? (
             <div className="canva-card p-12 text-center text-xs text-neutral-400">
-              Đang tải dữ liệu kho đề thi...
+              Đang tải dữ liệu kho đề thi từ máy chủ...
             </div>
           ) : filteredSnapshots.length === 0 ? (
             <div className="canva-card p-12 text-center space-y-2 border border-neutral-200/90 dark:border-neutral-800">
               <FolderArchive className="w-10 h-10 text-neutral-300 dark:text-neutral-700 mx-auto" />
               <p className="text-sm font-bold text-neutral-700 dark:text-neutral-300">
-                Chưa có đề thi nào trong danh sách lọc
+                Chưa có đề thi nào trong danh sách
               </p>
               <p className="text-xs text-neutral-400 max-w-md mx-auto">
-                Khi bất kỳ giáo viên nào tải file Word lên để kiểm tra lỗi, chuẩn hóa hoặc trộn mã đề, toàn bộ file gốc và file chuẩn hóa sẽ tự động xuất hiện tại đây.
+                Khi bất kỳ giáo viên nào tải file Word lên để kiểm tra lỗi, chuẩn hóa hoặc trộn mã đề, toàn bộ file gốc và file chuẩn hóa sẽ tự động lưu về đây.
               </p>
             </div>
           ) : (
@@ -690,9 +907,7 @@ export function AdminDashboard() {
                   ) : (
                     <Square className="w-4 h-4" />
                   )}
-                  <span>
-                    Chọn tất cả ({filteredSnapshots.length} đề thi hiển thị)
-                  </span>
+                  <span>Chọn tất cả ({filteredSnapshots.length} đề thi)</span>
                 </button>
                 <span>Sắp xếp: Mới nhất lên đầu</span>
               </div>
@@ -741,7 +956,9 @@ export function AdminDashboard() {
                             <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
                               ({item.userEmail})
                             </span>
-                            {getActionBadge(item.actionType, item.actionLabel)}
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-[#7d2ae8] dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {item.actionLabel}
+                            </span>
                             {!item.isViewed ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
                                 MỚI
@@ -776,7 +993,7 @@ export function AdminDashboard() {
                         </div>
                       </div>
 
-                      {/* Right: Action Buttons (Download Original, Download Standardized, Preview, Delete) */}
+                      {/* Right: Actions */}
                       <div className="flex flex-wrap items-center gap-2 lg:shrink-0 pl-7 lg:pl-0">
                         <button
                           onClick={() => void handleDownloadOriginal(item)}
@@ -807,7 +1024,7 @@ export function AdminDashboard() {
                         <button
                           onClick={() => void handleDeleteSingle(item.id)}
                           className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 text-neutral-400 hover:text-rose-600 hover:border-rose-300 transition canva-tap"
-                          title="Xóa đề này khỏi lưu trữ"
+                          title="Xóa đề này khỏi kho lưu trữ"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -818,174 +1035,6 @@ export function AdminDashboard() {
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* TAB 2: QUẢN LÝ GIÁO VIÊN & CHỌN NGƯỜI THEO DÕI                        */}
-      {/* ===================================================================== */}
-      {activeSubTab === 'users' && (
-        <div className="space-y-6 tab-enter">
-          {/* Add User Card */}
-          <div className="canva-card p-6 space-y-4 shadow-xs border border-neutral-200/90 dark:border-neutral-800">
-            <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-              <UserPlus className="w-4 h-4 text-[#7d2ae8]" />
-              <span>Thêm Giáo Viên / Tài Khoản Mới</span>
-            </h3>
-
-            <form
-              onSubmit={handleAddUser}
-              className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs"
-            >
-              <input
-                type="email"
-                required
-                placeholder="Email Google (VD: gv@gmail.com)"
-                value={newEmail}
-                onChange={e => setNewEmail(e.target.value)}
-                className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
-              />
-              <input
-                type="text"
-                placeholder="Tên hiển thị"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
-              />
-              <select
-                value={newRole}
-                onChange={e => setNewRole(e.target.value as any)}
-                className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-semibold"
-              >
-                <option value="free">Thành Viên Chuẩn</option>
-                <option value="pro">Thành Viên Ưu Tiên</option>
-              </select>
-              <button
-                type="submit"
-                className="canva-btn-primary py-2.5 rounded-xl font-bold transition canva-tap"
-              >
-                + Thêm Tài Khoản
-              </button>
-            </form>
-          </div>
-
-          {/* User Table Card */}
-          <div className="canva-card p-6 space-y-4 shadow-xs overflow-hidden border border-neutral-200/90 dark:border-neutral-800">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#7d2ae8]" />
-                <span>Danh Sách Tài Khoản &amp; Chọn Lọc Lưu Đề Thi</span>
-              </h3>
-              <span className="text-[11px] text-neutral-500">
-                Chế độ hiện tại:{' '}
-                <strong className="text-[#7d2ae8]">
-                  {syncPolicy.mode === 'all'
-                    ? 'Đang tự động lưu TẤT CẢ giáo viên'
-                    : syncPolicy.mode === 'selected'
-                    ? `Chỉ lưu ${syncPolicy.selectedEmails.length} giáo viên được tích chọn`
-                    : 'Đang tạm dừng lưu'}
-                </strong>
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-400 font-semibold">
-                    <th className="py-2.5 px-3">Người dùng</th>
-                    <th className="py-2.5 px-3">Email</th>
-                    <th className="py-2.5 px-3">Lưu Trữ Đề Thi</th>
-                    <th className="py-2.5 px-3">Hoạt động</th>
-                    <th className="py-2.5 px-3 text-right">Xóa</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                  {allUsers.map(u => {
-                    const isSuper = u.role === 'super_admin';
-                    const isTracked =
-                      syncPolicy.mode === 'all' ||
-                      syncPolicy.selectedEmails.some(
-                        e => e.toLowerCase() === u.email.toLowerCase()
-                      );
-                    const userSavedCount = snapshots.filter(
-                      s => s.userEmail.toLowerCase() === u.email.toLowerCase()
-                    ).length;
-
-                    return (
-                      <tr
-                        key={u.id}
-                        className="hover:bg-purple-50/40 dark:hover:bg-neutral-800/40 transition"
-                      >
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={
-                                u.photoURL ||
-                                `https://api.dicebear.com/7.x/initials/svg?seed=${u.email}`
-                              }
-                              alt=""
-                              className="w-7 h-7 rounded-full border border-neutral-200"
-                            />
-                            <div>
-                              <div className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                                <span>{u.displayName}</span>
-                                {isSuper && (
-                                  <span className="px-2 py-0.2 rounded-full text-[9px] font-extrabold bg-amber-500 text-white">
-                                    ADMIN DUY
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-3 font-mono text-neutral-500">{u.email}</td>
-
-                        <td className="py-3 px-3">
-                          <button
-                            onClick={() => handleToggleTrackedEmail(u.email)}
-                            className={`px-3 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 ${
-                              isTracked
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400'
-                            }`}
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>
-                              {syncPolicy.mode === 'all'
-                                ? 'Đang lưu (Tất cả)'
-                                : isTracked
-                                ? 'Đang theo dõi lưu đề'
-                                : 'Bấm để theo dõi'}
-                            </span>
-                          </button>
-                        </td>
-
-                        <td className="py-3 px-3 text-neutral-500 text-[11px]">
-                          <strong>{userSavedCount}</strong> đề trong kho •{' '}
-                          {u.examsGeneratedCount || 0} chuẩn hóa • {u.mixCount || 0} trộn
-                        </td>
-
-                        <td className="py-3 px-3 text-right">
-                          {!isSuper && (
-                            <button
-                              onClick={() => {
-                                deleteUser(u.id);
-                                toast.info('Đã xóa tài khoản', u.email);
-                              }}
-                              className="p-1.5 rounded-xl text-neutral-400 hover:text-rose-500 transition canva-tap"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1012,7 +1061,7 @@ export function AdminDashboard() {
                 type="text"
                 value={modelIdInput}
                 onChange={e => setModelIdInput(e.target.value)}
-                placeholder="gemini-3-flash-preview"
+                placeholder="gemini-2.0-flash"
                 className="w-full p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-mono font-semibold focus:ring-2 focus:ring-[#7d2ae8] outline-hidden"
               />
             </div>
@@ -1032,7 +1081,7 @@ export function AdminDashboard() {
 
             <div className="sm:col-span-2">
               <label className="block font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                Danh Sách Gemini API Keys Toàn Web (Ngăn cách bằng dấu phẩy hoặc xuống dòng):
+                Danh Sách Gemini API Keys Toàn Web (Ngăn cách bằng dấu phẩy):
               </label>
               <textarea
                 rows={3}
@@ -1068,9 +1117,7 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* MODAL XEM TRƯỚC NỘI DUNG CÂU HỎI CỦA ĐỀ THI ĐÃ LƯU                    */}
-      {/* ===================================================================== */}
+      {/* Modal Preview Questions */}
       {previewItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="canva-card w-full max-w-3xl max-h-[85vh] flex flex-col rounded-3xl overflow-hidden border border-neutral-200 dark:border-neutral-800 shadow-2xl">

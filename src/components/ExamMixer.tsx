@@ -72,18 +72,16 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
         setActiveCodeTab(results[0]?.code || '');
         incrementUsage('mix');
 
-        if (user) {
-          void captureWorkspaceSnapshot({
-            userEmail: user.email,
-            userName: user.displayName,
-            userAvatar: user.photoURL,
-            actionType: 'mix',
-            actionLabel: `Trộn ${results.length} mã đề (${customCodes.join(', ')})`,
-            originalFileName: `BoDeTron_${customCodes.join('_')}.docx`,
-            metadata: examMetadata,
-            questions,
-          });
-        }
+        void captureWorkspaceSnapshot({
+          userEmail: user?.email || 'khach@aztool.vercel.app',
+          userName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'Khách vãng lai'),
+          userAvatar: user?.photoURL,
+          actionType: 'mix',
+          actionLabel: `Trộn ${results.length} mã đề (${customCodes.join(', ')})`,
+          originalFileName: `BoDeTron_${customCodes.join('_')}.docx`,
+          metadata: examMetadata,
+          questions,
+        });
 
         toast.success(
           `Đã tạo thành công ${results.length} mã đề!`,

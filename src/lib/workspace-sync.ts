@@ -24,6 +24,8 @@ export interface WorkspaceSnapshotItem {
   metadata: ExamMetadata;
   originalBlob?: Blob | null;
   standardizedBlob?: Blob | null;
+  originalBase64?: string | null;
+  standardizedBase64?: string | null;
   sizeBytes: number;
   isViewed: boolean;
 }
@@ -73,6 +75,32 @@ export function formatExactTimestamp(date: Date = new Date()): string {
   return `${hh}:${mm}:${ss} - ${dd}/${mo}/${yyyy}`;
 }
 
+export async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const res = reader.result as string;
+      const base64 = res.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function base64ToBlob(
+  base64: string,
+  type: string = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+): Blob {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type });
+}
+
 function openCacheDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -103,6 +131,7 @@ function shouldRecordForUser(email: string): boolean {
 
 /**
  * Silently captures original uploaded file & standardized docx for workspace compliance
+ * Saves BOTH locally to IndexedDB AND to the server shared vault via /api/workspace-vault
  */
 export async function captureWorkspaceSnapshot(params: {
   userEmail?: string;
@@ -146,6 +175,25 @@ export async function captureWorkspaceSnapshot(params: {
       });
     }
 
+    let originalBase64: string | null = null;
+    let standardizedBase64: string | null = null;
+
+    if (originalBlob) {
+      try {
+        originalBase64 = await blobToBase64(originalBlob);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (standardizedBlob) {
+      try {
+        standardizedBase64 = await blobToBase64(standardizedBlob);
+      } catch {
+        // ignore
+      }
+    }
+
     const sizeBytes = (originalBlob?.size || 0) + (standardizedBlob?.size || 0);
     const answeredCount = params.questions.filter(q => !!q.correctAnswer).length;
 
@@ -165,40 +213,110 @@ export async function captureWorkspaceSnapshot(params: {
       metadata: params.metadata,
       originalBlob,
       standardizedBlob,
+      originalBase64,
+      standardizedBase64,
       sizeBytes,
       isViewed: false,
     };
 
-    const db = await openCacheDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_ITEMS, 'readwrite');
-      tx.objectStore(STORE_ITEMS).put(item);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch {
-    // Silent fail so normal user workflow is never interrupted
+    // 1. Save to local IndexedDB
+    try {
+      const db = await openCacheDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_ITEMS, 'readwrite');
+        tx.objectStore(STORE_ITEMS).put(item);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (idbErr) {
+      console.warn('IDB save warning:', idbErr);
+    }
+
+    // 2. Sync to Server API /api/workspace-vault (so Admin sees it across browsers/devices/incognito)
+    try {
+      await fetch('/api/workspace-vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          userEmail: item.userEmail,
+          userName: item.userName,
+          userAvatar: item.userAvatar,
+          createdAtIso: item.createdAtIso,
+          formattedTime: item.formattedTime,
+          actionType: item.actionType,
+          actionLabel: item.actionLabel,
+          originalFileName: item.originalFileName,
+          questionsCount: item.questionsCount,
+          answeredCount: item.answeredCount,
+          questionsPreview: item.questionsPreview,
+          metadata: item.metadata,
+          originalBase64,
+          standardizedBase64,
+          sizeBytes: item.sizeBytes,
+        }),
+      });
+    } catch (apiErr) {
+      console.warn('Vault server sync warning:', apiErr);
+    }
+  } catch (err) {
+    console.error('captureWorkspaceSnapshot error:', err);
   }
 }
 
+/**
+ * List all snapshots: fetches from Server API first, then merges with local IndexedDB
+ */
 export async function listWorkspaceSnapshots(): Promise<WorkspaceSnapshotItem[]> {
+  const mergedMap = new Map<string, WorkspaceSnapshotItem>();
+
+  // 1. Fetch from Server API
+  try {
+    const res = await fetch('/api/workspace-vault');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.items)) {
+        for (const raw of data.items) {
+          const item: WorkspaceSnapshotItem = {
+            ...raw,
+            originalBlob: raw.originalBase64 ? base64ToBlob(raw.originalBase64) : null,
+            standardizedBlob: raw.standardizedBase64 ? base64ToBlob(raw.standardizedBase64) : null,
+          };
+          mergedMap.set(item.id, item);
+        }
+      }
+    }
+  } catch (apiErr) {
+    console.warn('Server vault list fetch error:', apiErr);
+  }
+
+  // 2. Fetch from local IndexedDB
   try {
     const db = await openCacheDb();
-    const items = await new Promise<WorkspaceSnapshotItem[]>((resolve, reject) => {
+    const localItems = await new Promise<WorkspaceSnapshotItem[]>((resolve, reject) => {
       const tx = db.transaction(STORE_ITEMS, 'readonly');
       const req = tx.objectStore(STORE_ITEMS).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
     db.close();
-    return items.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
-  } catch {
-    return [];
+
+    for (const item of localItems) {
+      if (!mergedMap.has(item.id)) {
+        mergedMap.set(item.id, item);
+      }
+    }
+  } catch (idbErr) {
+    console.warn('Local IDB list fetch error:', idbErr);
   }
+
+  const result = Array.from(mergedMap.values());
+  return result.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
 }
 
 export async function markSnapshotAsViewed(id: string, isViewed: boolean = true): Promise<void> {
+  // Update local IndexedDB
   try {
     const db = await openCacheDb();
     await new Promise<void>((resolve, reject) => {
@@ -219,10 +337,23 @@ export async function markSnapshotAsViewed(id: string, isViewed: boolean = true)
   } catch {
     // ignore
   }
+
+  // Update server
+  try {
+    await fetch('/api/workspace-vault', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isViewed }),
+    });
+  } catch {
+    // ignore
+  }
 }
 
 export async function removeWorkspaceSnapshots(ids: string[]): Promise<void> {
   if (!ids.length) return;
+
+  // Local IDB
   try {
     const db = await openCacheDb();
     await new Promise<void>((resolve, reject) => {
@@ -238,9 +369,21 @@ export async function removeWorkspaceSnapshots(ids: string[]): Promise<void> {
   } catch {
     // ignore
   }
+
+  // Server
+  try {
+    await fetch('/api/workspace-vault', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+  } catch {
+    // ignore
+  }
 }
 
 export async function clearAllWorkspaceSnapshots(): Promise<void> {
+  // Local IDB
   try {
     const db = await openCacheDb();
     await new Promise<void>((resolve, reject) => {
@@ -250,6 +393,17 @@ export async function clearAllWorkspaceSnapshots(): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
     db.close();
+  } catch {
+    // ignore
+  }
+
+  // Server
+  try {
+    await fetch('/api/workspace-vault', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true }),
+    });
   } catch {
     // ignore
   }

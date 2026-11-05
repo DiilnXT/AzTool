@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile } from '@/types/exam';
+import { UserProfile, TabPermissions } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
@@ -9,6 +9,7 @@ const STORAGE_USER_KEY = 'aztool_current_user';
 const STORAGE_ALL_USERS_KEY = 'aztool_user_database';
 const STORAGE_SYSTEM_CONFIG = 'aztool_system_config';
 const STORAGE_THEME_KEY = 'aztool_theme_mode';
+const STORAGE_PERMISSIONS_KEY = 'aztool_user_permissions';
 
 declare global {
   interface Window {
@@ -25,6 +26,18 @@ export interface SystemConfig {
   defaultUniversity: string;
 }
 
+export const defaultUserPermissions: TabPermissions = {
+  canAudit: false,
+  canStandardize: false,
+  canMix: false,
+};
+
+export const superAdminPermissions: TabPermissions = {
+  canAudit: true,
+  canStandardize: true,
+  canMix: true,
+};
+
 interface AuthContextType {
   user: UserProfile | null;
   allUsers: UserProfile[];
@@ -36,6 +49,11 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isPro: boolean;
+  permissionsMap: Record<string, TabPermissions>;
+  hasTabAccess: (tab: 'ai-audit' | 'standardize' | 'mix') => boolean;
+  updateUserPermissions: (email: string, perms: TabPermissions) => Promise<void>;
+  grantAllPermissions: (email: string) => Promise<void>;
+  revokeAllPermissions: (email: string) => Promise<void>;
   loginWithGoogle: (customEmail?: string, customName?: string, customAvatar?: string) => Promise<void>;
   loginWithRealGoogleOAuth: (overrideClientId?: string) => Promise<boolean>;
   logout: () => void;
@@ -64,6 +82,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [permissionsMap, setPermissionsMap] = useState<Record<string, TabPermissions>>({
+    [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
+  });
   const [systemConfig, setSystemConfig] = useState<SystemConfig>(defaultSystemConfig);
   const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [isLoaded, setIsLoaded] = useState(false);
@@ -94,13 +115,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      // Load theme preference
+      // 1. Theme
       const savedTheme = localStorage.getItem(STORAGE_THEME_KEY) as 'light' | 'dark' | null;
       const initialTheme = savedTheme === 'dark' ? 'dark' : 'light';
       setThemeState(initialTheme);
       applyThemeToDom(initialTheme);
 
-      // Load system config (fallback to legacy key if exists)
+      // 2. Permissions from localStorage
+      let initialPerms: Record<string, TabPermissions> = {
+        [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
+      };
+      const storedPerms = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
+      if (storedPerms) {
+        try {
+          initialPerms = { ...initialPerms, ...JSON.parse(storedPerms) };
+        } catch {
+          // ignore
+        }
+      }
+      setPermissionsMap(initialPerms);
+
+      // 3. System Config
       const storedConfig =
         localStorage.getItem(STORAGE_SYSTEM_CONFIG) || localStorage.getItem('deq_system_config');
       if (storedConfig) {
@@ -115,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }));
       }
 
+      // 4. All Users
       const storedAllUsers =
         localStorage.getItem(STORAGE_ALL_USERS_KEY) || localStorage.getItem('deq_user_database');
       let usersList: UserProfile[] = [];
@@ -128,8 +164,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             displayName: 'Lê Nhật Duy',
             photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=duy',
             role: 'super_admin',
+            permissions: superAdminPermissions,
             createdAt: '2025-01-01',
-            lastActive: new Date().toISOString(),
+            lastActive: '2026-11-06T00:00:00.000Z',
             examsGeneratedCount: 120,
             mixCount: 85,
           },
@@ -138,15 +175,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setAllUsers(usersList);
 
+      // 5. Current User
       const storedUser =
         localStorage.getItem(STORAGE_USER_KEY) || localStorage.getItem('deq_current_user');
       if (storedUser) {
-        const parsed = JSON.parse(storedUser);
+        const parsed: UserProfile = JSON.parse(storedUser);
         if (parsed.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
           parsed.role = 'super_admin';
+          parsed.permissions = superAdminPermissions;
+        } else {
+          parsed.permissions = initialPerms[parsed.email.toLowerCase()] || defaultUserPermissions;
         }
         setUser(parsed);
       }
+
+      // 6. Fetch latest permissions from server API in background
+      void (async () => {
+        try {
+          const res = await fetch('/api/permissions');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.permissions && typeof data.permissions === 'object') {
+              const merged = {
+                ...initialPerms,
+                ...data.permissions,
+                [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
+              };
+              setPermissionsMap(merged);
+              localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(merged));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      })();
     } catch (e) {
       console.error('Error loading auth state:', e);
     } finally {
@@ -171,6 +233,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(users));
   };
 
+  const isSuperAdmin = Boolean(
+    user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+  );
+
+  const hasTabAccess = (tab: 'ai-audit' | 'standardize' | 'mix'): boolean => {
+    if (!user) return false;
+    if (isSuperAdmin) return true;
+    const norm = user.email.toLowerCase();
+    const perms = permissionsMap[norm] || user.permissions || defaultUserPermissions;
+    if (tab === 'ai-audit') return Boolean(perms.canAudit);
+    if (tab === 'standardize') return Boolean(perms.canStandardize);
+    if (tab === 'mix') return Boolean(perms.canMix);
+    return false;
+  };
+
+  const updateUserPermissions = async (email: string, perms: TabPermissions) => {
+    const norm = email.trim().toLowerCase();
+    const cleanPerms: TabPermissions =
+      norm === SUPER_ADMIN_EMAIL.toLowerCase()
+        ? superAdminPermissions
+        : {
+            canAudit: Boolean(perms.canAudit),
+            canStandardize: Boolean(perms.canStandardize),
+            canMix: Boolean(perms.canMix),
+          };
+
+    const updated = {
+      ...permissionsMap,
+      [norm]: cleanPerms,
+    };
+    setPermissionsMap(updated);
+    localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(updated));
+
+    // Update in allUsers
+    const updatedUsers = allUsers.map(u => {
+      if (u.email.toLowerCase() === norm) {
+        return { ...u, permissions: cleanPerms };
+      }
+      return u;
+    });
+    saveAllUsers(updatedUsers);
+
+    // Update self if target is current user
+    if (user && user.email.toLowerCase() === norm) {
+      const updatedSelf = { ...user, permissions: cleanPerms };
+      setUser(updatedSelf);
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
+    }
+
+    // Sync to Server API
+    try {
+      await fetch('/api/permissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: norm, permissions: cleanPerms }),
+      });
+    } catch (e) {
+      console.warn('Sync permissions error:', e);
+    }
+  };
+
+  const grantAllPermissions = async (email: string) => {
+    await updateUserPermissions(email, {
+      canAudit: true,
+      canStandardize: true,
+      canMix: true,
+    });
+  };
+
+  const revokeAllPermissions = async (email: string) => {
+    await updateUserPermissions(email, {
+      canAudit: false,
+      canStandardize: false,
+      canMix: false,
+    });
+  };
+
   const loginWithGoogle = async (
     customEmail?: string,
     customName?: string,
@@ -181,6 +320,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const lowerEmail = email.toLowerCase();
     const isSuper = lowerEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+    // Check permissions map
+    const userPerms = isSuper
+      ? superAdminPermissions
+      : permissionsMap[lowerEmail] || defaultUserPermissions;
 
     let existing = allUsers.find(u => u.email.toLowerCase() === lowerEmail);
     if (!existing) {
@@ -193,7 +337,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         photoURL:
           customAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${lowerEmail}`,
         role: isSuper ? 'super_admin' : 'free',
-        createdAt: new Date().toISOString(),
+        permissions: userPerms,
+        createdAt: new Date().toISOString().split('T')[0],
         lastActive: new Date().toISOString(),
         examsGeneratedCount: 0,
         mixCount: 0,
@@ -202,6 +347,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       saveAllUsers(updated);
     } else {
       existing.role = isSuper ? 'super_admin' : existing.role === 'super_admin' ? 'free' : existing.role;
+      existing.permissions = userPerms;
       if (customName) existing.displayName = customName;
       if (customAvatar) existing.photoURL = customAvatar;
       existing.lastActive = new Date().toISOString();
@@ -366,8 +512,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     saveAllUsers(updatedAll);
   };
 
-  const isSuperAdmin =
-    Boolean(user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
   const isAdmin = isSuperAdmin;
   const isPro = isSuperAdmin || user?.role === 'pro';
 
@@ -384,6 +528,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSuperAdmin,
         isAdmin,
         isPro,
+        permissionsMap,
+        hasTabAccess,
+        updateUserPermissions,
+        grantAllPermissions,
+        revokeAllPermissions,
         loginWithGoogle,
         loginWithRealGoogleOAuth,
         logout,

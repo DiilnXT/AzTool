@@ -71,12 +71,19 @@ export interface QuestionAuditError {
   }[];
 }
 
+export interface TabPermissions {
+  canAudit: boolean;
+  canStandardize: boolean;
+  canMix: boolean;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
   displayName: string;
   photoURL?: string;
   role: 'super_admin' | 'admin' | 'pro' | 'free';
+  permissions?: TabPermissions;
   customApiKey?: string;
   customModelId?: string;
   createdAt: string;
