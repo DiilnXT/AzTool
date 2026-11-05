@@ -375,7 +375,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
         <div className="max-w-6xl mx-auto px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 font-bold text-neutral-800 dark:text-neutral-200">
             <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc]" />
-            <span>© {new Date().getFullYear()} AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
+            <span>© 2026 AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-5 text-[11px] text-neutral-400">
             <span className="hover:text-[#7d2ae8] cursor-pointer transition">Điều khoản dịch vụ</span>
