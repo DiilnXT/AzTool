@@ -46,7 +46,7 @@ interface AuthContextType {
 const defaultSystemConfig: SystemConfig = {
   defaultGeminiApiKey: '',
   defaultGeminiModel: DEFAULT_MODEL_ID,
-  googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+  googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
   announcement: 'Chào mừng quý thầy cô đến với AzTool Studio • Chuẩn hóa & Trộn đề thi trắc nghiệm ĐH Cửu Long',
   maintenanceMode: false,
   defaultUniversity: 'TRƯỜNG ĐẠI HỌC CỬU LONG',
