@@ -19,10 +19,12 @@ import {
   Shuffle,
   Crown,
   Lock,
+  Unlock,
   KeyRound,
   BookOpen,
   Mail,
   CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 
 function TabLockedView({
@@ -42,52 +44,58 @@ function TabLockedView({
   };
 
   return (
-    <div className="max-w-xl mx-auto py-12 px-4 text-center">
-      <div className="canva-card p-8 sm:p-10 space-y-6 border-2 border-amber-500/30 bg-gradient-to-b from-amber-500/5 via-transparent to-transparent shadow-xl rounded-3xl">
-        <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center border border-amber-500/20 shadow-inner">
+    <div className="max-w-xl mx-auto py-10 px-4 text-center">
+      <div className="canva-card p-8 sm:p-10 space-y-6 border-2 border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-white to-white dark:from-amber-500/10 dark:via-[#141622] dark:to-[#141622] shadow-xl rounded-3xl">
+        <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-amber-500 to-rose-500 text-white mx-auto flex items-center justify-center shadow-lg shadow-amber-500/25">
           <Lock className="w-8 h-8" />
         </div>
 
         <div className="space-y-2">
-          <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200">
-            CHƯA ĐƯỢC CẤP QUYỀN
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+            <ShieldAlert className="w-3.5 h-3.5" /> TÍNH NĂNG CẦN CẤP QUYỀN
           </span>
-          <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white">
+          <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white pt-1">
             {tabTitle}
           </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
-            Tài khoản <strong className="text-neutral-900 dark:text-neutral-100">{user?.email}</strong> hiện chưa được Quản trị viên kích hoạt quyền sử dụng phân hệ này.
+          <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
+            Tài khoản Gmail{' '}
+            <strong className="text-[#7d2ae8] dark:text-purple-300 font-mono">
+              {user?.email}
+            </strong>{' '}
+            hiện chưa được Quản trị viên mở khóa phân hệ này.
           </p>
         </div>
 
-        <div className="p-4 rounded-2xl bg-neutral-100/70 dark:bg-neutral-900/70 border border-neutral-200 dark:border-neutral-800 text-xs space-y-2 text-left">
+        <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-900/90 border border-neutral-200 dark:border-neutral-800 text-xs space-y-2.5 text-left">
           <div className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
             <KeyRound className="w-4 h-4 text-amber-500" />
-            <span>Cách kích hoạt quyền sử dụng:</span>
+            <span>Hướng dẫn mở khóa phân hệ:</span>
           </div>
-          <p className="text-neutral-500 dark:text-neutral-400 text-[11px] leading-relaxed">
-            Vui lòng gửi email đến Quản trị viên hệ thống AzTool kèm địa chỉ Gmail của bạn để được cấp quyền mở khóa phân hệ này.
+          <p className="text-neutral-500 dark:text-neutral-400 text-xs leading-relaxed">
+            Hệ thống AzTool phân quyền riêng từng chức năng theo Gmail. Vui lòng gửi địa chỉ Gmail của bạn cho Quản trị viên để được bật quyền ngay lập tức:
           </p>
-          <div className="pt-1 flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
-            <span className="font-mono font-bold text-xs text-[#7d2ae8]">
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+            <span className="font-mono font-bold text-xs text-[#7d2ae8] dark:text-purple-300">
               lenhatduy.vietnam@gmail.com
             </span>
             <button
               onClick={handleCopyEmail}
-              className="canva-btn-primary px-3 py-1 rounded-lg text-[10px] font-bold"
+              className="canva-btn-primary px-3.5 py-1.5 rounded-lg text-[11px] font-bold"
             >
-              {copied ? 'Đã chép!' : 'Sao chép'}
+              {copied ? '✓ Đã sao chép' : 'Sao chép Email'}
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
           <a
-            href="mailto:lenhatduy.vietnam@gmail.com?subject=Yêu%20cầu%20cấp%20quyền%20sử%20dụng%20AzTool&body=Kính%20gửi%20Admin%20Duy,%0A%0ATôi%20muốn%20được%20cấp%20quyền%20sử%20dụng%20các%20phân%20hệ%20AzTool%20cho%20tài%20khoản%20Gmail:%20"
+            href={`mailto:lenhatduy.vietnam@gmail.com?subject=Yêu%20cầu%20cấp%20quyền%20AzTool&body=Xin%20chào%20Admin,%20vui%20lòng%20cấp%20quyền%20sử%20dụng%20cho%20Gmail:%20${encodeURIComponent(
+              user?.email || ''
+            )}`}
             className="canva-btn-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md canva-tap flex items-center gap-2"
           >
             <Mail className="w-4 h-4" />
-            <span>Gửi Email Yêu Cầu Cấp Quyền</span>
+            <span>Gửi Email Yêu Cầu Mở Khóa</span>
           </a>
 
           <button
@@ -104,7 +112,9 @@ function TabLockedView({
 
 function MainApp() {
   const { user, systemConfig, isLoaded, isSuperAdmin, hasTabAccess } = useAuth();
-  const [activeTab, setActiveTab] = useState<'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide'>('ai-audit');
+  const [activeTab, setActiveTab] = useState<
+    'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide'
+  >('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
 
@@ -114,7 +124,7 @@ function MainApp() {
 
   const answeredCount = questions.filter(q => !!q.correctAnswer).length;
 
-  // Show LandingPage when user is not logged in OR when user clicks "Trang Chủ"
+  // Show LandingPage when user is not logged in OR when user clicks "Trang Giới Thiệu"
   if (isLoaded && (!user || showLandingPage)) {
     return (
       <LandingPage
@@ -125,22 +135,68 @@ function MainApp() {
     );
   }
 
-  // Permission checks
   const canUseAudit = hasTabAccess('ai-audit');
   const canUseStandardize = hasTabAccess('standardize');
   const canUseMix = hasTabAccess('mix');
 
+  const navCards = [
+    {
+      id: 'ai-audit' as const,
+      step: 'PHÂN HỆ 01',
+      title: 'AI Soát Lỗi Đề Thi',
+      desc: 'Tải đề Word & Quét lỗi bằng AI',
+      icon: Sparkles,
+      gradient: 'from-[#00c4cc] to-[#7d2ae8]',
+      activeRing: 'ring-[#7d2ae8] border-[#7d2ae8] bg-purple-50/60 dark:bg-purple-950/30',
+      unlocked: canUseAudit,
+      requirePerm: true,
+    },
+    {
+      id: 'standardize' as const,
+      step: 'PHÂN HỆ 02',
+      title: 'Chuẩn Hóa 1 Chạm',
+      desc: 'Xuất khuôn mẫu & Đánh dấu X đỏ',
+      icon: FileCheck,
+      gradient: 'from-emerald-500 to-teal-500',
+      activeRing: 'ring-emerald-500 border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30',
+      unlocked: canUseStandardize,
+      requirePerm: true,
+    },
+    {
+      id: 'mix' as const,
+      step: 'PHÂN HỆ 03',
+      title: 'Trộn Mã Đề 25%',
+      desc: 'Hoán vị câu & Cân bằng A-B-C-D',
+      icon: Shuffle,
+      gradient: 'from-[#ff66c4] to-[#7d2ae8]',
+      activeRing: 'ring-purple-500 border-purple-500 bg-purple-50/60 dark:bg-purple-950/30',
+      unlocked: canUseMix,
+      requirePerm: true,
+    },
+    {
+      id: 'guide' as const,
+      step: 'TÀI LIỆU',
+      title: 'Quy Chuẩn Soạn Đề',
+      desc: 'Cú pháp chuẩn & Mẹo định dạng',
+      icon: BookOpen,
+      gradient: 'from-blue-500 to-indigo-600',
+      activeRing: 'ring-blue-500 border-blue-500 bg-blue-50/60 dark:bg-blue-950/30',
+      unlocked: true,
+      requirePerm: false,
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f8f9fc] dark:bg-[#0c0d12] text-[#0e1318] dark:text-[#f2f3f7] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white">
+    <div className="min-h-screen bg-[#f4f6fb] dark:bg-[#0b0d13] text-[#0e1318] dark:text-[#f2f3f7] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white">
       {/* Broadcast Announcement Banner */}
       {systemConfig.announcement && (
-        <div className="bg-gradient-to-r from-[#7d2ae8] via-[#00c4cc] to-[#ff66c4] text-white text-[11px] py-1.5 px-4 text-center font-bold tracking-tight flex items-center justify-center gap-2 shadow-xs">
-          <Sparkles className="w-3 h-3 shrink-0 animate-pulse text-amber-200" />
-          <span className="truncate max-w-3xl">{systemConfig.announcement}</span>
+        <div className="bg-gradient-to-r from-[#7d2ae8] via-[#00c4cc] to-[#ff66c4] text-white text-xs py-1.5 px-4 text-center font-bold tracking-tight flex items-center justify-center gap-2 shadow-xs">
+          <Sparkles className="w-3.5 h-3.5 shrink-0 animate-pulse text-amber-200" />
+          <span className="truncate max-w-4xl">{systemConfig.announcement}</span>
         </div>
       )}
 
-      {/* Main Navbar */}
+      {/* Top Clean Navbar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -150,99 +206,112 @@ function MainApp() {
         answeredCount={answeredCount}
       />
 
-      {/* Sleek, Compact Workspace Control Bar (No giant distracting banner) */}
-      <div className="w-full bg-white dark:bg-[#12141c] border-b border-neutral-200/80 dark:border-neutral-800/80 px-4 sm:px-6 py-2.5 shadow-2xs sticky top-16 z-30">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Tab Switcher */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
-            {/* Tab 1: AI Soát Lỗi */}
-            <button
-              onClick={() => setActiveTab('ai-audit')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition canva-tap whitespace-nowrap ${
-                activeTab === 'ai-audit'
-                  ? 'bg-white dark:bg-neutral-800 text-[#7d2ae8] dark:text-purple-300 shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#00c4cc]" />
-              <span>1. Tải Đề &amp; AI Soát Lỗi</span>
-              {!canUseAudit && <Lock className="w-3 h-3 text-amber-500" />}
-            </button>
+      {/* High-Contrast Feature Module Dock */}
+      <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs">
+        <div className="max-w-6xl mx-auto">
+          <div
+            className={`grid grid-cols-2 ${
+              isSuperAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+            } gap-2.5 sm:gap-3`}
+          >
+            {navCards.map(card => {
+              const Icon = card.icon;
+              const isActive = activeTab === card.id;
+              return (
+                <button
+                  key={card.id}
+                  onClick={() => setActiveTab(card.id)}
+                  className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap ${
+                    isActive
+                      ? `${card.activeRing} ring-2 shadow-md scale-[1.01]`
+                      : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#171a26] hover:border-purple-400/60 dark:hover:border-purple-500/50 hover:shadow-sm'
+                  }`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </div>
 
-            {/* Tab 2: Chuẩn Hóa 1 Chạm */}
-            <button
-              onClick={() => setActiveTab('standardize')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition canva-tap whitespace-nowrap ${
-                activeTab === 'standardize'
-                  ? 'bg-white dark:bg-neutral-800 text-[#7d2ae8] dark:text-purple-300 shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>2. Chuẩn Hóa 1 Chạm</span>
-              {!canUseStandardize && <Lock className="w-3 h-3 text-amber-500" />}
-            </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500">
+                        {card.step}
+                      </span>
+                      {card.requirePerm && (
+                        <span
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                            card.unlocked
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
+                          }`}
+                        >
+                          {card.unlocked ? (
+                            <>
+                              <Unlock className="w-2.5 h-2.5" /> Mở
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-2.5 h-2.5" /> Khóa
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </div>
 
-            {/* Tab 3: Trộn Mã Đề */}
-            <button
-              onClick={() => setActiveTab('mix')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition canva-tap whitespace-nowrap ${
-                activeTab === 'mix'
-                  ? 'bg-white dark:bg-neutral-800 text-[#7d2ae8] dark:text-purple-300 shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <Shuffle className="w-3.5 h-3.5 text-purple-600" />
-              <span>3. Trộn Mã Đề 25%</span>
-              {!canUseMix && <Lock className="w-3 h-3 text-amber-500" />}
-            </button>
+                    <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
+                      {card.title}
+                    </div>
+                    <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                      {card.desc}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
 
-            {/* Tab 4: Hướng Dẫn */}
-            <button
-              onClick={() => setActiveTab('guide')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition canva-tap whitespace-nowrap ${
-                activeTab === 'guide'
-                  ? 'bg-white dark:bg-neutral-800 text-[#7d2ae8] dark:text-purple-300 shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5 text-neutral-500" />
-              <span>4. Hướng Dẫn Soạn Đề</span>
-            </button>
-
-            {/* Tab 5: Admin */}
+            {/* Card 5: Exclusive Admin Command Center */}
             {isSuperAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition canva-tap whitespace-nowrap ${
+                className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 lg:col-span-1 ${
                   activeTab === 'admin'
-                    ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-xs'
-                    : 'text-amber-600 hover:text-amber-700 dark:text-amber-400'
+                    ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
+                    : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
                 }`}
               >
-                <Crown className="w-3.5 h-3.5" />
-                <span>👑 Quản Trị Hệ Thống</span>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                  <Crown className="w-5 h-5" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
+                      ADMIN DUY LÊ
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-500 text-white">
+                      PRO
+                    </span>
+                  </div>
+
+                  <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
+                    Trung Tâm Quản Trị
+                  </div>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                    Phân quyền &amp; Kho đề thi
+                  </div>
+                </div>
               </button>
             )}
           </div>
-
-          {/* Right: Quick Status */}
-          <div className="flex items-center gap-2 text-xs">
-            {questions.length > 0 && (
-              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>{questions.length} câu ({answeredCount} có đáp án)</span>
-              </span>
-            )}
-          </div>
         </div>
-      </div>
+      </section>
 
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20">
         <div key={activeTab} className="tab-enter">
-          {activeTab === 'ai-audit' && (
-            canUseAudit ? (
+          {activeTab === 'ai-audit' &&
+            (canUseAudit ? (
               <AiAuditor
                 examMetadata={examMetadata}
                 setExamMetadata={setExamMetadata}
@@ -254,14 +323,13 @@ function MainApp() {
               />
             ) : (
               <TabLockedView
-                tabTitle="Phân Hệ: AI Kiểm Định & Soát Lỗi Đề Thi"
+                tabTitle="Phân Hệ 01: AI Kiểm Định & Soát Lỗi Đề Thi"
                 onGoToGuide={() => setActiveTab('guide')}
               />
-            )
-          )}
+            ))}
 
-          {activeTab === 'standardize' && (
-            canUseStandardize ? (
+          {activeTab === 'standardize' &&
+            (canUseStandardize ? (
               <ExamStandardizer
                 examMetadata={examMetadata}
                 setExamMetadata={setExamMetadata}
@@ -272,14 +340,13 @@ function MainApp() {
               />
             ) : (
               <TabLockedView
-                tabTitle="Phân Hệ: Chuẩn Hóa Đề Thi & Bảng Đáp Án 1 Chạm"
+                tabTitle="Phân Hệ 02: Chuẩn Hóa Đề Thi & Bảng Đáp Án 1 Chạm"
                 onGoToGuide={() => setActiveTab('guide')}
               />
-            )
-          )}
+            ))}
 
-          {activeTab === 'mix' && (
-            canUseMix ? (
+          {activeTab === 'mix' &&
+            (canUseMix ? (
               <ExamMixer
                 examMetadata={examMetadata}
                 questions={questions}
@@ -287,11 +354,10 @@ function MainApp() {
               />
             ) : (
               <TabLockedView
-                tabTitle="Phân Hệ: Trộn Mã Đề 25% Cân Bằng Đáp Án"
+                tabTitle="Phân Hệ 03: Trộn Mã Đề 25% Cân Bằng Đáp Án"
                 onGoToGuide={() => setActiveTab('guide')}
               />
-            )
-          )}
+            ))}
 
           {activeTab === 'admin' && isSuperAdmin && <AdminDashboard />}
 
@@ -306,7 +372,7 @@ function MainApp() {
       />
 
       {/* SaaS Clean Footer */}
-      <footer className="w-full border-t border-neutral-200/80 dark:border-neutral-800/80 bg-white/70 dark:bg-neutral-950/70 backdrop-blur-md py-6 px-4 sm:px-6 transition-colors mt-auto">
+      <footer className="w-full border-t border-neutral-200/80 dark:border-neutral-800/80 bg-white/80 dark:bg-[#11131a]/80 backdrop-blur-md py-5 px-4 sm:px-6 transition-colors mt-auto">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-2 font-bold text-neutral-700 dark:text-neutral-200">
             <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc]" />
@@ -316,16 +382,16 @@ function MainApp() {
           <div className="flex flex-wrap items-center justify-center gap-5 text-[11px] text-neutral-400">
             <button
               onClick={() => setActiveTab('guide')}
-              className="hover:text-[#7d2ae8] transition"
+              className="hover:text-[#7d2ae8] transition font-medium"
             >
               Quy Chuẩn Soạn Đề
             </button>
             <span>•</span>
-            <span className="text-neutral-400">Điều Khoản Dịch Vụ</span>
+            <span>Điều Khoản Dịch Vụ</span>
             <span>•</span>
-            <span className="text-neutral-400">Chính Sách Bảo Mật</span>
+            <span>Chính Sách Bảo Mật</span>
             <span>•</span>
-            <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+            <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Hệ Thống Hoạt Động 100%
             </span>

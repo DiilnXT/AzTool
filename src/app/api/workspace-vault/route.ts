@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface ServerVaultItem {
   id: string;
@@ -22,35 +23,58 @@ export interface ServerVaultItem {
   isViewed: boolean;
 }
 
-const VAULT_FILE = path.join(process.cwd(), 'data', 'workspace-vault.json');
-
-// In-memory cache
-let inMemoryVault: ServerVaultItem[] = [];
-
-function readVaultFromFile(): ServerVaultItem[] {
+function getStoragePath(filename: string): string {
+  const localDir = path.join(process.cwd(), 'data');
   try {
-    if (fs.existsSync(VAULT_FILE)) {
-      const raw = fs.readFileSync(VAULT_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        inMemoryVault = parsed;
-      }
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
     }
-  } catch (e) {
-    console.error('Error reading workspace-vault file:', e);
+    const testFile = path.join(localDir, '.write-test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return path.join(localDir, filename);
+  } catch {
+    return path.join(os.tmpdir(), filename);
   }
-  return inMemoryVault;
 }
 
-function writeVaultToFile(items: ServerVaultItem[]) {
+const globalForVault = globalThis as unknown as {
+  __azVault?: ServerVaultItem[];
+};
+
+function readVault(): ServerVaultItem[] {
+  if (!globalForVault.__azVault) {
+    globalForVault.__azVault = [];
+  }
   try {
-    const dir = path.dirname(VAULT_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    const vaultFile = getStoragePath('workspace-vault.json');
+    if (fs.existsSync(vaultFile)) {
+      const raw = fs.readFileSync(vaultFile, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const map = new Map<string, ServerVaultItem>();
+        for (const item of globalForVault.__azVault) {
+          map.set(item.id, item);
+        }
+        for (const item of parsed) {
+          if (item?.id) map.set(item.id, item);
+        }
+        globalForVault.__azVault = Array.from(map.values());
+      }
     }
-    fs.writeFileSync(VAULT_FILE, JSON.stringify(items, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Error writing workspace-vault file:', e);
+  } catch {
+    // ignore
+  }
+  return globalForVault.__azVault;
+}
+
+function writeVault(items: ServerVaultItem[]) {
+  globalForVault.__azVault = items;
+  try {
+    const vaultFile = getStoragePath('workspace-vault.json');
+    fs.writeFileSync(vaultFile, JSON.stringify(items, null, 2), 'utf-8');
+  } catch {
+    // ignore
   }
 }
 
@@ -59,7 +83,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
-    const items = readVaultFromFile();
+    const items = readVault();
 
     if (id) {
       const single = items.find(i => i.id === id);
@@ -69,7 +93,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, item: single });
     }
 
-    // Return items sorted by newest first
     const sorted = [...items].sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
     return NextResponse.json({ success: true, count: sorted.length, items: sorted });
   } catch (err: any) {
@@ -80,7 +103,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const items = readVaultFromFile();
+    const items = readVault();
 
     const newItem: ServerVaultItem = {
       id: body.id || `vault-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -102,10 +125,8 @@ export async function POST(req: Request) {
       isViewed: false,
     };
 
-    // Prepend new item
     const updated = [newItem, ...items.filter(i => i.id !== newItem.id)];
-    inMemoryVault = updated;
-    writeVaultToFile(updated);
+    writeVault(updated);
 
     return NextResponse.json({ success: true, item: newItem });
   } catch (err: any) {
@@ -118,12 +139,11 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { id, isViewed } = body;
 
-    const items = readVaultFromFile();
+    const items = [...readVault()];
     const target = items.find(i => i.id === id);
     if (target) {
       target.isViewed = isViewed !== undefined ? isViewed : true;
-      inMemoryVault = [...items];
-      writeVaultToFile(inMemoryVault);
+      writeVault(items);
       return NextResponse.json({ success: true, item: target });
     }
 
@@ -138,7 +158,7 @@ export async function DELETE(req: Request) {
     const body = await req.json().catch(() => ({}));
     const { ids, all, allViewed } = body;
 
-    let items = readVaultFromFile();
+    let items = [...readVault()];
 
     if (all) {
       items = [];
@@ -148,8 +168,7 @@ export async function DELETE(req: Request) {
       items = items.filter(i => !ids.includes(i.id));
     }
 
-    inMemoryVault = items;
-    writeVaultToFile(items);
+    writeVault(items);
 
     return NextResponse.json({ success: true, remainingCount: items.length });
   } catch (err: any) {

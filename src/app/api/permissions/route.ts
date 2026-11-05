@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface TabPermissions {
   canAudit: boolean;
@@ -9,48 +10,63 @@ export interface TabPermissions {
 }
 
 const SUPER_ADMIN = 'lenhatduy.vietnam@gmail.com';
-const DATA_FILE = path.join(process.cwd(), 'data', 'permissions.json');
 
-// In-memory fallback
-let inMemoryPermissions: Record<string, TabPermissions> = {
-  [SUPER_ADMIN]: {
-    canAudit: true,
-    canStandardize: true,
-    canMix: true,
-  },
+function getStoragePath(filename: string): string {
+  const localDir = path.join(process.cwd(), 'data');
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const testFile = path.join(localDir, '.write-test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return path.join(localDir, filename);
+  } catch {
+    return path.join(os.tmpdir(), filename);
+  }
+}
+
+const globalForPerms = globalThis as unknown as {
+  __azPermissions?: Record<string, TabPermissions>;
 };
 
-function readPermissionsFromFile(): Record<string, TabPermissions> {
+function readPermissions(): Record<string, TabPermissions> {
+  if (!globalForPerms.__azPermissions) {
+    globalForPerms.__azPermissions = {
+      [SUPER_ADMIN]: { canAudit: true, canStandardize: true, canMix: true },
+    };
+  }
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+    const filePath = getStoragePath('permissions.json');
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
-      inMemoryPermissions = {
-        ...inMemoryPermissions,
+      globalForPerms.__azPermissions = {
+        ...globalForPerms.__azPermissions,
         ...parsed,
         [SUPER_ADMIN]: { canAudit: true, canStandardize: true, canMix: true },
       };
     }
-  } catch (e) {
-    console.error('Error reading permissions file:', e);
+  } catch {
+    // ignore
   }
-  return inMemoryPermissions;
+  return globalForPerms.__azPermissions || {
+    [SUPER_ADMIN]: { canAudit: true, canStandardize: true, canMix: true },
+  };
 }
 
-function writePermissionsToFile(data: Record<string, TabPermissions>) {
+function writePermissions(data: Record<string, TabPermissions>) {
+  globalForPerms.__azPermissions = data;
   try {
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Error writing permissions file:', e);
+    const filePath = getStoragePath('permissions.json');
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch {
+    // ignore
   }
 }
 
 export async function GET() {
-  const perms = readPermissionsFromFile();
+  const perms = readPermissions();
   return NextResponse.json({ success: true, permissions: perms });
 }
 
@@ -59,7 +75,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { email, permissions, bulk } = body;
 
-    const perms = readPermissionsFromFile();
+    const perms = { ...readPermissions() };
 
     if (bulk && typeof bulk === 'object') {
       Object.assign(perms, bulk);
@@ -72,11 +88,8 @@ export async function POST(req: Request) {
       };
     }
 
-    // Always enforce super admin rights
     perms[SUPER_ADMIN] = { canAudit: true, canStandardize: true, canMix: true };
-
-    inMemoryPermissions = perms;
-    writePermissionsToFile(perms);
+    writePermissions(perms);
 
     return NextResponse.json({ success: true, permissions: perms });
   } catch (err: any) {

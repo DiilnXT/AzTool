@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, TabPermissions } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 
@@ -51,11 +51,19 @@ interface AuthContextType {
   isPro: boolean;
   permissionsMap: Record<string, TabPermissions>;
   hasTabAccess: (tab: 'ai-audit' | 'standardize' | 'mix') => boolean;
-  updateUserPermissions: (email: string, perms: TabPermissions) => Promise<void>;
-  grantAllPermissions: (email: string) => Promise<void>;
+  updateUserPermissions: (
+    email: string,
+    perms: TabPermissions,
+    displayName?: string
+  ) => Promise<void>;
+  grantAllPermissions: (email: string, displayName?: string) => Promise<void>;
   revokeAllPermissions: (email: string) => Promise<void>;
   refreshUsers: () => Promise<void>;
-  loginWithGoogle: (customEmail?: string, customName?: string, customAvatar?: string) => Promise<void>;
+  loginWithGoogle: (
+    customEmail?: string,
+    customName?: string,
+    customAvatar?: string
+  ) => Promise<void>;
   loginWithRealGoogleOAuth: (overrideClientId?: string) => Promise<boolean>;
   logout: () => void;
   updateDisplayName: (newName: string) => void;
@@ -73,7 +81,8 @@ const defaultSystemConfig: SystemConfig = {
   googleClientId:
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
     '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
-  announcement: 'AzTool AI Studio • Nền tảng công cụ tự động hóa tài liệu, khảo thí & trợ lý AI thông minh',
+  announcement:
+    'AzTool AI Studio • Nền tảng công cụ tự động hóa tài liệu, khảo thí & trợ lý AI thông minh',
   maintenanceMode: false,
   defaultUniversity: '',
 };
@@ -114,39 +123,112 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const refreshUsers = async () => {
+  /**
+   * Stable, non-destructive user & permission sync.
+   * Merges server users into local users without ever wiping local entries!
+   */
+  const refreshUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/users');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.users)) {
-          setAllUsers(data.users);
-          localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(data.users));
+      const [usersRes, permsRes] = await Promise.all([
+        fetch('/api/users').catch(() => null),
+        fetch('/api/permissions').catch(() => null),
+      ]);
 
-          // Also merge permissions
-          const permsObj: Record<string, TabPermissions> = {};
-          for (const u of data.users) {
-            if (u.permissions) {
-              permsObj[u.email.toLowerCase()] = u.permissions;
-            }
-          }
-          if (Object.keys(permsObj).length > 0) {
-            setPermissionsMap(prev => {
-              const updated = {
-                ...prev,
-                ...permsObj,
-                [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
-              };
-              localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(updated));
-              return updated;
-            });
-          }
+      let serverUsers: UserProfile[] = [];
+      if (usersRes && usersRes.ok) {
+        const data = await usersRes.json();
+        if (Array.isArray(data.users)) {
+          serverUsers = data.users;
         }
       }
+
+      let serverPerms: Record<string, TabPermissions> = {};
+      if (permsRes && permsRes.ok) {
+        const pData = await permsRes.json();
+        if (pData.permissions && typeof pData.permissions === 'object') {
+          serverPerms = pData.permissions;
+        }
+      }
+
+      // Merge permissions (local takes precedence if already set in localStorage)
+      let currentLocalPerms: Record<string, TabPermissions> = {};
+      try {
+        const rawP = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
+        if (rawP) currentLocalPerms = JSON.parse(rawP);
+      } catch {
+        // ignore
+      }
+
+      const mergedPerms: Record<string, TabPermissions> = {
+        ...serverPerms,
+        ...currentLocalPerms,
+        [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
+      };
+      setPermissionsMap(mergedPerms);
+      localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(mergedPerms));
+
+      // Merge users (never drop any user from local storage)
+      let currentLocalUsers: UserProfile[] = [];
+      try {
+        const rawU = localStorage.getItem(STORAGE_ALL_USERS_KEY);
+        if (rawU) currentLocalUsers = JSON.parse(rawU);
+      } catch {
+        // ignore
+      }
+
+      const userMap = new Map<string, UserProfile>();
+      for (const su of serverUsers) {
+        if (su?.email) {
+          const norm = su.email.toLowerCase();
+          userMap.set(norm, {
+            ...su,
+            permissions: mergedPerms[norm] || su.permissions || defaultUserPermissions,
+          });
+        }
+      }
+      for (const lu of currentLocalUsers) {
+        if (lu?.email) {
+          const norm = lu.email.toLowerCase();
+          const existing = userMap.get(norm);
+          userMap.set(norm, {
+            ...(existing || lu),
+            ...lu,
+            permissions:
+              mergedPerms[norm] ||
+              lu.permissions ||
+              existing?.permissions ||
+              defaultUserPermissions,
+          });
+        }
+      }
+
+      // Also ensure every email in mergedPerms has a UserProfile row
+      for (const [emailKey, pVal] of Object.entries(mergedPerms)) {
+        const norm = emailKey.toLowerCase();
+        if (!userMap.has(norm)) {
+          const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+          userMap.set(norm, {
+            id: isSuper ? 'admin-001' : `user-${norm}`,
+            email: norm,
+            displayName: isSuper ? 'Lê Nhật Duy' : norm.split('@')[0],
+            photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
+            role: isSuper ? 'super_admin' : 'free',
+            permissions: isSuper ? superAdminPermissions : pVal,
+            createdAt: '2026-11-06',
+            lastActive: '2026-11-06T00:00:00.000Z',
+            examsGeneratedCount: 0,
+            mixCount: 0,
+          });
+        }
+      }
+
+      const mergedList = Array.from(userMap.values());
+      setAllUsers(mergedList);
+      localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(mergedList));
     } catch (e) {
       console.warn('refreshUsers error:', e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     try {
@@ -185,7 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }));
       }
 
-      // 4. All Users (local cache first)
+      // 4. All Users
       const storedAllUsers =
         localStorage.getItem(STORAGE_ALL_USERS_KEY) || localStorage.getItem('deq_user_database');
       let usersList: UserProfile[] = [];
@@ -224,14 +306,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsed);
       }
 
-      // 6. Fetch live users and permissions from Server API
+      // 6. Sync with Server once on mount
       void refreshUsers();
     } catch (e) {
       console.error('Error loading auth state:', e);
     } finally {
       setIsLoaded(true);
     }
-  }, []);
+  }, [refreshUsers]);
 
   const setTheme = (mode: 'light' | 'dark') => {
     setThemeState(mode);
@@ -265,8 +347,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const updateUserPermissions = async (email: string, perms: TabPermissions) => {
+  const updateUserPermissions = async (
+    email: string,
+    perms: TabPermissions,
+    displayName?: string
+  ) => {
     const norm = email.trim().toLowerCase();
+    if (!norm) return;
+
     const cleanPerms: TabPermissions =
       norm === SUPER_ADMIN_EMAIL.toLowerCase()
         ? superAdminPermissions
@@ -276,53 +364,88 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             canMix: Boolean(perms.canMix),
           };
 
-    const updated = {
-      ...permissionsMap,
-      [norm]: cleanPerms,
-    };
-    setPermissionsMap(updated);
-    localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(updated));
-
-    // Update in allUsers
-    const updatedUsers = allUsers.map(u => {
-      if (u.email.toLowerCase() === norm) {
-        return { ...u, permissions: cleanPerms };
-      }
-      return u;
+    // 1. Update permissionsMap immediately
+    setPermissionsMap(prev => {
+      const next = { ...prev, [norm]: cleanPerms };
+      localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(next));
+      return next;
     });
-    saveAllUsers(updatedUsers);
 
-    // Update self if target is current user
+    // 2. Update or Add user in allUsers immediately (never disappears!)
+    setAllUsers(prev => {
+      const exists = prev.some(u => u.email.toLowerCase() === norm);
+      let nextUsers: UserProfile[];
+      if (exists) {
+        nextUsers = prev.map(u => {
+          if (u.email.toLowerCase() === norm) {
+            return {
+              ...u,
+              displayName: displayName?.trim() || u.displayName,
+              permissions: cleanPerms,
+              lastActive: new Date().toISOString(),
+            };
+          }
+          return u;
+        });
+      } else {
+        const newUser: UserProfile = {
+          id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          email: norm,
+          displayName: displayName?.trim() || norm.split('@')[0],
+          photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
+          role: norm === SUPER_ADMIN_EMAIL.toLowerCase() ? 'super_admin' : 'free',
+          permissions: cleanPerms,
+          createdAt: new Date().toISOString().split('T')[0],
+          lastActive: new Date().toISOString(),
+          examsGeneratedCount: 0,
+          mixCount: 0,
+        };
+        nextUsers = [...prev, newUser];
+      }
+      localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsers));
+      return nextUsers;
+    });
+
+    // 3. Update current user if matching
     if (user && user.email.toLowerCase() === norm) {
       const updatedSelf = { ...user, permissions: cleanPerms };
       setUser(updatedSelf);
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
     }
 
-    // Sync to Server API
+    // 4. Push to Server API in background (do NOT overwrite state from server response)
     try {
-      await fetch('/api/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: norm, permissions: cleanPerms }),
-      });
-      await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: norm, permissions: cleanPerms }),
-      });
-      void refreshUsers();
+      await Promise.all([
+        fetch('/api/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: norm, permissions: cleanPerms }),
+        }),
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: norm,
+            displayName: displayName?.trim() || undefined,
+            permissions: cleanPerms,
+          }),
+        }),
+      ]);
     } catch (e) {
       console.warn('Sync permissions error:', e);
     }
   };
 
-  const grantAllPermissions = async (email: string) => {
-    await updateUserPermissions(email, {
-      canAudit: true,
-      canStandardize: true,
-      canMix: true,
-    });
+  const grantAllPermissions = async (email: string, displayName?: string) => {
+    await updateUserPermissions(
+      email,
+      {
+        canAudit: true,
+        canStandardize: true,
+        canMix: true,
+      },
+      displayName
+    );
   };
 
   const revokeAllPermissions = async (email: string) => {
@@ -344,7 +467,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const lowerEmail = email.toLowerCase();
     const isSuper = lowerEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-    // Check permissions map
     const userPerms = isSuper
       ? superAdminPermissions
       : permissionsMap[lowerEmail] || defaultUserPermissions;
@@ -355,8 +477,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: `user-${Date.now()}`,
         email: lowerEmail,
         displayName:
-          customName ||
-          (isSuper ? 'Lê Nhật Duy' : lowerEmail.split('@')[0]),
+          customName || (isSuper ? 'Lê Nhật Duy' : lowerEmail.split('@')[0]),
         photoURL:
           customAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${lowerEmail}`,
         role: isSuper ? 'super_admin' : 'free',
@@ -369,7 +490,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const updated = [existing, ...allUsers];
       saveAllUsers(updated);
     } else {
-      existing.role = isSuper ? 'super_admin' : existing.role === 'super_admin' ? 'free' : existing.role;
+      existing.role = isSuper
+        ? 'super_admin'
+        : existing.role === 'super_admin'
+        ? 'free'
+        : existing.role;
       existing.permissions = userPerms;
       if (customName) existing.displayName = customName;
       if (customAvatar) existing.photoURL = customAvatar;
@@ -380,16 +505,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(existing);
     localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(existing));
 
-    // Sync to Server API /api/users
     try {
       await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: existing }),
       });
-      void refreshUsers();
-    } catch (e) {
-      console.warn('Sync login user error:', e);
+    } catch {
+      // ignore
     }
   };
 
@@ -497,16 +620,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteUser = async (userId: string) => {
-    const target = allUsers.find(u => u.id === userId);
+    const target = allUsers.find(u => u.id === userId || u.email === userId);
     if (target?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
       return;
     }
-    const updated = allUsers.filter(u => u.id !== userId);
+    const targetEmail = target?.email.toLowerCase();
+    const updated = allUsers.filter(
+      u => u.id !== userId && u.email.toLowerCase() !== targetEmail
+    );
     saveAllUsers(updated);
 
+    if (targetEmail) {
+      setPermissionsMap(prev => {
+        const next = { ...prev };
+        delete next[targetEmail];
+        localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+
     try {
-      await fetch(`/api/users?id=${encodeURIComponent(userId)}`, { method: 'DELETE' });
-      void refreshUsers();
+      await fetch(
+        `/api/users?id=${encodeURIComponent(userId)}&email=${encodeURIComponent(
+          targetEmail || ''
+        )}`,
+        { method: 'DELETE' }
+      );
     } catch {
       // ignore
     }
