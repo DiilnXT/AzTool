@@ -54,6 +54,7 @@ interface AuthContextType {
   updateUserPermissions: (email: string, perms: TabPermissions) => Promise<void>;
   grantAllPermissions: (email: string) => Promise<void>;
   revokeAllPermissions: (email: string) => Promise<void>;
+  refreshUsers: () => Promise<void>;
   loginWithGoogle: (customEmail?: string, customName?: string, customAvatar?: string) => Promise<void>;
   loginWithRealGoogleOAuth: (overrideClientId?: string) => Promise<boolean>;
   logout: () => void;
@@ -113,6 +114,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshUsers = async () => {
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.users)) {
+          setAllUsers(data.users);
+          localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(data.users));
+
+          // Also merge permissions
+          const permsObj: Record<string, TabPermissions> = {};
+          for (const u of data.users) {
+            if (u.permissions) {
+              permsObj[u.email.toLowerCase()] = u.permissions;
+            }
+          }
+          if (Object.keys(permsObj).length > 0) {
+            setPermissionsMap(prev => {
+              const updated = {
+                ...prev,
+                ...permsObj,
+                [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
+              };
+              localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('refreshUsers error:', e);
+    }
+  };
+
   useEffect(() => {
     try {
       // 1. Theme
@@ -150,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }));
       }
 
-      // 4. All Users
+      // 4. All Users (local cache first)
       const storedAllUsers =
         localStorage.getItem(STORAGE_ALL_USERS_KEY) || localStorage.getItem('deq_user_database');
       let usersList: UserProfile[] = [];
@@ -189,26 +224,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsed);
       }
 
-      // 6. Fetch latest permissions from server API in background
-      void (async () => {
-        try {
-          const res = await fetch('/api/permissions');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.permissions && typeof data.permissions === 'object') {
-              const merged = {
-                ...initialPerms,
-                ...data.permissions,
-                [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
-              };
-              setPermissionsMap(merged);
-              localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(merged));
-            }
-          }
-        } catch {
-          // ignore
-        }
-      })();
+      // 6. Fetch live users and permissions from Server API
+      void refreshUsers();
     } catch (e) {
       console.error('Error loading auth state:', e);
     } finally {
@@ -289,6 +306,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: norm, permissions: cleanPerms }),
       });
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: norm, permissions: cleanPerms }),
+      });
+      void refreshUsers();
     } catch (e) {
       console.warn('Sync permissions error:', e);
     }
@@ -356,6 +379,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setUser(existing);
     localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(existing));
+
+    // Sync to Server API /api/users
+    try {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: existing }),
+      });
+      void refreshUsers();
+    } catch (e) {
+      console.warn('Sync login user error:', e);
+    }
   };
 
   const loginWithRealGoogleOAuth = async (overrideClientId?: string): Promise<boolean> => {
@@ -461,13 +496,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteUser = (userId: string) => {
+  const deleteUser = async (userId: string) => {
     const target = allUsers.find(u => u.id === userId);
     if (target?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
       return;
     }
     const updated = allUsers.filter(u => u.id !== userId);
     saveAllUsers(updated);
+
+    try {
+      await fetch(`/api/users?id=${encodeURIComponent(userId)}`, { method: 'DELETE' });
+      void refreshUsers();
+    } catch {
+      // ignore
+    }
   };
 
   const saveUserApiKey = (key: string) => {
@@ -533,6 +575,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateUserPermissions,
         grantAllPermissions,
         revokeAllPermissions,
+        refreshUsers,
         loginWithGoogle,
         loginWithRealGoogleOAuth,
         logout,
