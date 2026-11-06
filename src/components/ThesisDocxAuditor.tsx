@@ -10,6 +10,7 @@ import {
   exportFixedThesisDocxBlob,
   insertThreeCatalogsAfterTocToZip,
   formatNumberedAbbreviationLine,
+  suggestAbbreviationMeaningsWithAI,
   ThesisAuditReport,
   ThesisAuditIssue,
 } from '@/lib/word-thesis-engine';
@@ -424,6 +425,55 @@ export function ThesisDocxAuditor() {
           toast.showLoading(title, sub, pct);
         }
       );
+
+      // Auto-resolve any unknown abbreviations via Gemini AI if API key is available
+      const savedApiKey =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('deq_gemini_api_key') || ''
+          : '';
+      const savedModel =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('deq_gemini_model') || undefined
+          : undefined;
+      const unresolvedAbbrevs = auditReport.abbreviations.filter(ab =>
+        ab.inferredMeaning.includes('Thuật ngữ viết tắt chuyên ngành trong đề án')
+      );
+
+      if (unresolvedAbbrevs.length > 0 && savedApiKey.trim()) {
+        try {
+          toast.showLoading(
+            'Đang tra cứu AI chuẩn thuật ngữ học thuật cho các từ viết tắt...',
+            unresolvedAbbrevs.map(a => a.acronym).join(', '),
+            94
+          );
+          const aiMeanings = await suggestAbbreviationMeaningsWithAI(
+            unresolvedAbbrevs.map(a => ({
+              acronym: a.acronym,
+              context: a.firstContextSnippet,
+            })),
+            savedApiKey,
+            savedModel
+          );
+          for (const ab of auditReport.abbreviations) {
+            if (aiMeanings[ab.acronym]) {
+              ab.inferredMeaning = aiMeanings[ab.acronym];
+            }
+          }
+          for (const iss of auditReport.issues) {
+            if (iss.category === 'abbreviation' && iss.acronym && aiMeanings[iss.acronym]) {
+              const abObj = auditReport.abbreviations.find(a => a.acronym === iss.acronym);
+              if (abObj) {
+                const formatted = formatNumberedAbbreviationLine(1, abObj).replace(/^\d+\.\s*/, '');
+                iss.suggestedFixText = formatted;
+                iss.meaning = formatted;
+              }
+            }
+          }
+        } catch {
+          // Ignore AI fallback error and keep built-in dictionary results
+        }
+      }
+
       zipRef.current = zip;
       setReport(auditReport);
 
@@ -534,7 +584,7 @@ export function ThesisDocxAuditor() {
     if (!zipRef.current || !report) return;
     try {
       toast.showLoading(
-        'Đang chèn 3 Danh mục vào sau Mục lục & trước Nội dung...',
+        'Đang chèn 3 Danh mục vào trước Mục lục (sau Lời giới thiệu / Lời nói đầu)...',
         'Danh mục hình • Danh mục bảng • Danh mục từ viết tắt',
         65
       );
@@ -542,8 +592,8 @@ export function ThesisDocxAuditor() {
       if (ok) {
         setCatalogsInserted(true);
         toast.success(
-          'Đã chèn 3 Danh mục chuẩn vào sau Mục lục!',
-          'Danh mục hình, Danh mục bảng & Danh mục từ viết tắt đã được đặt ngay trước phần nội dung chính.'
+          'Đã chèn 3 Danh mục chuẩn vào trước Mục lục!',
+          'Danh mục hình, Danh mục bảng & Danh mục từ viết tắt đã được đặt sau Lời giới thiệu / Lời nói đầu và trước Mục lục.'
         );
         confetti({ particleCount: 50, spread: 60 });
       } else {
@@ -551,6 +601,8 @@ export function ThesisDocxAuditor() {
       }
     } catch (err: any) {
       toast.error('Lỗi khi chèn 3 danh mục', err.message || String(err));
+    } finally {
+      toast.hideLoading();
     }
   };
 
@@ -561,8 +613,8 @@ export function ThesisDocxAuditor() {
     setIsFixingAll(true);
     setLoadingProgress(10);
     toast.showLoading(
-      `Đang sửa tự động ${unfixed.length} vị trí & chèn 3 Danh mục sau Mục lục...`,
-      'Chuẩn hóa Chương 1 → Hình 1.1, 1.2... & giữ nguyên 100% định dạng gốc',
+      `Đang sửa tự động ${unfixed.length} vị trí & chèn 3 Danh mục trước Mục lục...`,
+      'Chuẩn hóa Chương 1 → Hình 1.1, Bảng 1.1... & giữ nguyên 100% định dạng gốc',
       10
     );
 
@@ -595,11 +647,11 @@ export function ThesisDocxAuditor() {
       }
 
       // Automatically insert/update the 3 Catalogs (Danh mục hình, Danh mục bảng, Danh mục từ viết tắt)
-      // right AFTER Mục lục and BEFORE Main Content!
+      // right BEFORE Mục lục and AFTER Lời giới thiệu / Lời nói đầu!
       setLoadingProgress(88);
       toast.showLoading(
-        'Đang chèn 3 Danh mục (Hình, Bảng, Từ viết tắt) vào sau Mục lục...',
-        'Đặt ngay sau Mục lục và trước phần Mở đầu / Chương 1',
+        'Đang chèn 3 Danh mục (Hình, Bảng, Từ viết tắt) vào trước Mục lục...',
+        'Đặt ngay sau Lời giới thiệu / Lời nói đầu và trước Mục lục',
         88
       );
       await new Promise(r => setTimeout(r, 25));
@@ -621,7 +673,7 @@ export function ThesisDocxAuditor() {
       setLoadingProgress(100);
       setFixedCount(report.issues.length);
       toast.success(
-        `Đã sửa ${unfixed.length} lỗi & chèn 3 Danh mục sau Mục lục!`,
+        `Đã sửa ${unfixed.length} lỗi & chèn 3 Danh mục trước Mục lục!`,
         'Bấm nút "Tải File Word Đã Chỉnh Sửa (.docx)" để tải về ngay.'
       );
       confetti({ particleCount: 75, spread: 70 });
@@ -636,7 +688,7 @@ export function ThesisDocxAuditor() {
   const handleDownloadFixedDocx = () => {
     if (!zipRef.current || !report) return;
     try {
-      // Ensure 3 catalogs after Mục lục are always up to date when exporting if user fixed issues
+      // Ensure 3 catalogs before Mục lục are always up to date when exporting if user fixed issues
       if (!catalogsInserted) {
         insertThreeCatalogsAfterTocToZip(zipRef.current, report, customFixInputs);
         setCatalogsInserted(true);
@@ -668,7 +720,7 @@ export function ThesisDocxAuditor() {
 
       toast.success(
         'Đã tải File Word Đã Chỉnh Sửa (.docx)!',
-        `File "${outName}" đã chuẩn hóa Chương 1 → Hình 1.1, 1.2... và chèn đủ 3 Danh mục ngay sau Mục lục.`
+        `File "${outName}" đã chuẩn hóa Bảng n.m / Hình n.m và chèn đủ 3 Danh mục trước Mục lục (sau Lời giới thiệu / Lời nói đầu).`
       );
       confetti({ particleCount: 60, spread: 60 });
     } catch (err: any) {
@@ -696,7 +748,7 @@ export function ThesisDocxAuditor() {
               Kiểm Duyệt Danh Mục Hình Ảnh, Bảng Biểu, Từ Viết Tắt &amp; Sửa Thẳng Vào File Word
             </h2>
             <p className="text-xs sm:text-sm text-purple-100/85 leading-relaxed">
-              Đọc <strong>100% toàn bộ cấu trúc XML của file Word</strong>: Tự động đối chiếu theo đúng <strong>Chương thực tế</strong> (VD: Chương 1 mà ghi <strong>Hình 20.1</strong> sẽ tự động sửa lại thành <strong>Hình 1.1.</strong>, hình tiếp theo là <strong>Hình 1.2.</strong>), bắt lỗi nhảy số (2.3 → 2.5), và <strong>tự động chèn 3 Danh mục (Danh mục hình, Danh mục bảng, Danh mục từ viết tắt) vào ngay sau Mục lục &amp; trước Nội dung chính!</strong>
+              Đọc <strong>100% toàn bộ cấu trúc XML của file Word</strong>: Tự động đối chiếu theo đúng <strong>Chương thực tế</strong>, tự động chèn nhãn <strong>Bảng n.m / Hình n.m</strong> cho mọi bảng biểu và hình ảnh chưa có chú thích, chuẩn hóa 100% thuật ngữ viết tắt chuyên ngành, và <strong>chèn đủ 3 Danh mục vào trước Mục lục (ngay sau Lời giới thiệu &amp; Lời nói đầu)!</strong>
             </p>
           </div>
 
@@ -827,7 +879,7 @@ export function ThesisDocxAuditor() {
                 </span>
                 {catalogsInserted && (
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300">
-                    ✓ Đã chèn 3 Danh mục sau Mục lục
+                    ✓ Đã chèn 3 Danh mục trước Mục lục (sau Lời giới thiệu)
                   </span>
                 )}
               </div>
@@ -876,7 +928,7 @@ export function ThesisDocxAuditor() {
                 className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm shadow-md transition canva-tap flex items-center gap-1.5"
               >
                 <Layers className="w-4 h-4" />
-                <span>Chèn 3 Danh Mục (Sau Mục Lục)</span>
+                <span>Chèn 3 Danh Mục (Trước Mục Lục)</span>
               </button>
 
               <button

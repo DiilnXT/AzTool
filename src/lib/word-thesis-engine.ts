@@ -52,15 +52,18 @@ export interface ThesisAuditIssue {
   fixAction:
     | 'replace_paragraph_text'
     | 'insert_caption_after_node'
+    | 'insert_caption_before_table'
     | 'append_abbreviation_row'
     | 'insert_three_catalogs';
   fixed?: boolean;
   cascadeUpdates?: CascadeUpdateItem[];
   acronym?: string;
   meaning?: string;
+  tableIndex?: number;
 }
 
 export interface ThesisTocZones {
+  prefaceEndNodeIndex: number;
   mainTocStartNodeIndex: number;
   mainTocEndNodeIndex: number;
   abbrevStartNodeIndex: number;
@@ -93,7 +96,7 @@ export type ThesisProgressCallback = (title: string, subtitle?: string, progress
 // ============================================================================
 
 export const ACADEMIC_ABBREV_DICTIONARY: Record<string, string> = {
-  // Y học - Hóa sinh lâm sàng - Sinh học phân tử (chuẩn đề án Y Sinh)
+  // Y học - Hóa sinh lâm sàng - Sinh học phân tử - Dược lý (chuẩn đề án Y Sinh 100%)
   CK: 'CK (Creatine Kinase): Enzym xúc tác chuyển hóa năng lượng ở cơ và tim.',
   'CK-MB':
     'CK-MB (Creatine Kinase-MB): Isoenzym đặc hiệu cơ tim dùng trong chẩn đoán nhồi máu cơ tim.',
@@ -104,44 +107,131 @@ export const ACADEMIC_ABBREV_DICTIONARY: Record<string, string> = {
   HbA1c:
     'HbA1c: Glycated hemoglobin (chỉ số đánh giá và kiểm soát đường huyết trung bình trong 2 - 3 tháng của bệnh nhân đái tháo đường).',
   AST: 'AST (Aspartate Aminotransferase / GOT): Enzym chuyển nhóm amin đánh giá tổn thương tế bào gan và cơ tim.',
+  GOT: 'GOT (Glutamate Oxaloacetate Transaminase / AST): Enzym chuyển nhóm amin đánh giá tổn thương tế bào gan và cơ tim.',
   ALT: 'ALT (Alanine Aminotransferase / GPT): Enzym chuyển nhóm amin đặc hiệu đánh giá tổn thương nhu mô gan.',
+  GPT: 'GPT (Glutamate Pyruvate Transaminase / ALT): Enzym chuyển nhóm amin đặc hiệu đánh giá tổn thương nhu mô gan.',
   GGT: 'GGT (Gamma-Glutamyl Transferase): Enzym màng tế bào gan mật, tăng cao trong tắc mật và tổn thương gan.',
   ALP: 'ALP (Alkaline Phosphatase): Enzym phosphatase kiềm đánh giá bệnh lý đường mật và xương.',
+  ACP: 'ACP (Acid Phosphatase): Enzym phosphatase axit.',
   LDH: 'LDH (Lactate Dehydrogenase): Enzym xúc tác chuyển hóa qua lại giữa pyruvate và lactate.',
+  CHE: 'CHE (Cholinesterase): Enzym thủy phân dẫn chất cholin đánh giá chức năng tổng hợp của gan và ngộ độc phospho hữu cơ.',
+  GLDH: 'GLDH (Glutamate Dehydrogenase): Enzym ty thể đặc hiệu đánh giá hoại tử tế bào gan nặng.',
+  G6PD: 'G6PD (Glucose-6-Phosphate Dehydrogenase): Enzym bảo vệ màng hồng cầu chống lại tác nhân oxy hóa.',
+  PKU: 'PKU (Phenylketonuria): Bệnh rối loạn chuyển hóa phenylalanin bẩm sinh.',
   CRP: 'CRP (C-Reactive Protein): Protein phản ứng C chỉ điểm tình trạng viêm cấp tính.',
+  'hs-CRP': 'hs-CRP (High-Sensitivity C-Reactive Protein): Protein phản ứng C độ nhạy cao đánh giá nguy cơ tim mạch.',
+  PCT: 'PCT (Procalcitonin): Dấu ấn sinh học đặc hiệu chỉ điểm nhiễm khuẩn huyết và nhiễm trùng nặng.',
+  ESR: 'ESR (Erythrocyte Sedimentation Rate / VSS): Tốc độ máu lắng.',
+  VSS: 'VSS (Vitesse de Sédimentation Globulaire): Tốc độ lắng máu.',
   HDL: 'HDL (High-Density Lipoprotein): Lipoprotein tỷ trọng cao (cholesterol bảo vệ thành mạch).',
   'HDL-C': 'HDL-C (High-Density Lipoprotein Cholesterol): Cholesterol lipoprotein tỷ trọng cao.',
   LDL: 'LDL (Low-Density Lipoprotein): Lipoprotein tỷ trọng thấp (cholesterol gây xơ vữa động mạch).',
   'LDL-C': 'LDL-C (Low-Density Lipoprotein Cholesterol): Cholesterol lipoprotein tỷ trọng thấp.',
   VLDL: 'VLDL (Very Low-Density Lipoprotein): Lipoprotein tỷ trọng rất thấp vận chuyển triglycerid nội sinh.',
   TG: 'TG (Triglyceride): Chất béo trung tính dự trữ năng lượng trong huyết tương và mô mỡ.',
+  TC: 'TC (Total Cholesterol): Cholesterol toàn phần trong huyết thanh.',
+  FFA: 'FFA (Free Fatty Acids): Axit béo tự do.',
   BUN: 'BUN (Blood Urea Nitrogen): Nồng độ nitơ urê trong máu đánh giá chức năng lọc cầu thận.',
   eGFR: 'eGFR (Estimated Glomerular Filtration Rate): Độ lọc cầu thận ước tính đánh giá chức năng thận.',
+  GFR: 'GFR (Glomerular Filtration Rate): Mức lọc cầu thận.',
+  ACR: 'ACR (Albumin-to-Creatinine Ratio): Tỷ số albumin trên creatinin niệu phát hiện sớm tổn thương thận.',
+  OGTT: 'OGTT (Oral Glucose Tolerance Test): Nghiệm pháp dung nạp glucose đường uống.',
+  FPG: 'FPG (Fasting Plasma Glucose): Đường huyết lúc đói.',
+  PPG: 'PPG (Postprandial Plasma Glucose): Đường huyết sau ăn.',
+  T1DM: 'T1DM (Type 1 Diabetes Mellitus): Đái tháo đường típ 1.',
+  T2DM: 'T2DM (Type 2 Diabetes Mellitus): Đái tháo đường típ 2.',
+  GDM: 'GDM (Gestational Diabetes Mellitus): Đái tháo đường thai kỳ.',
+  TSH: 'TSH (Thyroid-Stimulating Hormone): Hormon kích thích tuyến giáp của tuyến yên.',
+  FT3: 'FT3 (Free Triiodothyronine): Hormon tuyến giáp T3 tự do.',
+  FT4: 'FT4 (Free Thyroxine): Hormon tuyến giáp T4 tự do.',
+  PTH: 'PTH (Parathyroid Hormone): Hormon tuyến cận giáp điều hòa nồng độ calci máu.',
+  ACTH: 'ACTH (Adrenocorticotropic Hormone): Hormon kích thích vỏ thượng thận.',
+  FSH: 'FSH (Follicle-Stimulating Hormone): Hormon kích thích nang trứng.',
+  LH: 'LH (Luteinizing Hormone): Hormon hoàng thể hóa.',
+  HCG: 'hCG (Human Chorionic Gonadotropin): Hormon hướng sinh dục nhau thai người.',
+  PSA: 'PSA (Prostate-Specific Antigen): Kháng nguyên đặc hiệu tuyến tiền liệt.',
+  AFP: 'AFP (Alpha-Fetoprotein): Dấu ấn sinh học ung thư biểu mô tế bào gan.',
+  CEA: 'CEA (Carcinoembryonic Antigen): Kháng nguyên ung thư biểu mô phôi.',
+  PT: 'PT (Prothrombin Time): Thời gian prothrombin đánh giá đường đông máu ngoại sinh.',
+  INR: 'INR (International Normalized Ratio): Chỉ số chuẩn hóa quốc tế về đông máu.',
+  APTT: 'aPTT (Activated Partial Thromboplastin Time): Thời gian thromboplastin từng phần hoạt hóa.',
+  DIC: 'DIC (Disseminated Intravascular Coagulation): Đông máu rải rác trong lòng mạch.',
+  Troponin: 'Troponin (cTnI / cTnT): Protein cấu trúc cơ tim đặc hiệu chẩn đoán nhồi máu cơ tim.',
+  cTnI: 'cTnI (Cardiac Troponin I): Troponin I đặc hiệu cơ tim.',
+  cTnT: 'cTnT (Cardiac Troponin T): Troponin T đặc hiệu cơ tim.',
+  BNP: 'BNP (B-type Natriuretic Peptide): Peptid bài natri lợi niệu típ B đánh giá suy tim.',
+  'NT-proBNP': 'NT-proBNP (N-terminal pro B-type Natriuretic Peptide): Dấu ấn sinh học chẩn đoán và tiên lượng suy tim.',
   WBC: 'WBC (White Blood Cell): Số lượng bạch cầu trong máu ngoại vi.',
   RBC: 'RBC (Red Blood Cell): Số lượng hồng cầu trong máu ngoại vi.',
   PLT: 'PLT (Platelet): Số lượng tiểu cầu tham gia quá trình cầm máu và đông máu.',
   HGB: 'HGB (Hemoglobin): Huyết sắc tố vận chuyển oxy trong hồng cầu.',
+  Hb: 'Hb (Hemoglobin): Huyết sắc tố vận chuyển oxy trong hồng cầu.',
   HCT: 'HCT (Hematocrit): Tỷ lệ thể tích hồng cầu trên tổng thể tích máu toàn phần.',
   MCV: 'MCV (Mean Corpuscular Volume): Thể tích trung bình của một hồng cầu.',
   MCH: 'MCH (Mean Corpuscular Hemoglobin): Lượng huyết sắc tố trung bình trong một hồng cầu.',
   MCHC: 'MCHC (Mean Corpuscular Hemoglobin Concentration): Nồng độ huyết sắc tố trung bình trong hồng cầu.',
+  RDW: 'RDW (Red Cell Distribution Width): Độ phân bố kích thước hồng cầu.',
+  NEU: 'NEU (Neutrophil): Bạch cầu đoạn trung tính.',
+  LYM: 'LYM (Lymphocyte): Bạch cầu lympho.',
+  MONO: 'MONO (Monocyte): Bạch cầu mono.',
+  EOS: 'EOS (Eosinophil): Bạch cầu đoạn ưa axit.',
+  BASO: 'BASO (Basophil): Bạch cầu đoạn ưa bazơ.',
   ATP: 'ATP (Adenosine Triphosphate): Phân tử mang năng lượng chính trong tế bào sống.',
   ADP: 'ADP (Adenosine Diphosphate): Hợp chất nucleotide tham gia chu trình chuyển hóa năng lượng ATP.',
   AMP: 'AMP (Adenosine Monophosphate): Nucleotide cấu tạo nên axit nucleic và chuyển hóa năng lượng.',
+  cAMP: 'cAMP (Cyclic Adenosine Monophosphate): Adenosine monophosphate vòng (chất truyền tin thứ hai nội bào).',
+  GTP: 'GTP (Guanosine Triphosphate): Hợp chất cao năng tham gia tổng hợp protein và truyền tín hiệu.',
+  GDP: 'GDP (Gross Domestic Product / Guanosine Diphosphate): Tổng sản phẩm quốc nội / Guanosine diphosphate.',
   NAD: 'NAD (Nicotinamide Adenine Dinucleotide): Coenzym vận chuyển điện tử trong phản ứng oxy hóa - khử.',
   NADH: 'NADH (Nicotinamide Adenine Dinucleotide - dạng khử): Coenzym khử cung cấp điện tử cho chuỗi hô hấp tế bào.',
-  NADPH: 'NADPH (Nicotinamide Adenine Dinucleotide Phosphate): Coenzym khử trong tổng hợp sinh học và chống oxy hóa.',
+  NADP: 'NADP (Nicotinamide Adenine Dinucleotide Phosphate): Coenzym vận chuyển điện tử trong phản ứng đồng hóa.',
+  NADPH: 'NADPH (Nicotinamide Adenine Dinucleotide Phosphate - dạng khử): Coenzym khử trong tổng hợp sinh học và chống oxy hóa.',
   FAD: 'FAD (Flavin Adenine Dinucleotide): Coenzym oxy hóa - khử trong chu trình Krebs.',
+  FADH2: 'FADH2 (Flavin Adenine Dinucleotide - dạng khử): Coenzym khử sinh năng lượng trong chuỗi truyền điện tử ty thể.',
+  CoA: 'CoA (Coenzyme A): Coenzym chuyển nhóm acyl trong chuyển hóa axit béo và chu trình axit citric.',
+  ROS: 'ROS (Reactive Oxygen Species): Các gốc oxy phản ứng (gốc tự do oxy hóa).',
+  SOD: 'SOD (Superoxide Dismutase): Enzym chống oxy hóa phân giải gốc tự do superoxide.',
+  CAT: 'CAT (Catalase): Enzym phân giải hydro peroxid (H2O2) thành nước và oxy.',
+  GPx: 'GPx (Glutathione Peroxidase): Enzym bảo vệ tế bào khỏi tổn thương oxy hóa lipid.',
+  GSH: 'GSH (Reduced Glutathione): Glutathione dạng khử chống oxy hóa nội bào.',
+  MDA: 'MDA (Malondialdehyde): Sản phẩm peroxid hóa lipid màng tế bào.',
+  NO: 'NO (Nitric Oxide): Phân tử tín hiệu giãn mạch nội mô.',
   DNA: 'DNA (Deoxyribonucleic Acid): Axit deoxyribonucleic lưu giữ thông tin di truyền.',
   ADN: 'ADN (Axit Deoxyribonucleic): Phân tử mang thông tin di truyền của sinh vật.',
+  cDNA: 'cDNA (Complementary DNA): DNA bổ sung được tổng hợp từ khuôn mẫu mRNA nhờ enzym phiên mã ngược.',
   RNA: 'RNA (Ribonucleic Acid): Axit ribonucleic tham gia phiên mã và tổng hợp protein.',
   ARN: 'ARN (Axit Ribonucleic): Đại phân tử sinh học tham gia biểu hiện gen và tổng hợp protein.',
   mRNA: 'mRNA (Messenger RNA): ARN thông tin làm khuôn mẫu cho quá trình dịch mã tổng hợp protein.',
   tRNA: 'tRNA (Transfer RNA): ARN vận chuyển axit amin tới ribosom.',
   rRNA: 'rRNA (Ribosomal RNA): ARN cấu tạo nên tiểu phần ribosom.',
+  miRNA: 'miRNA (MicroRNA): ARN nhỏ không mã hóa điều hòa biểu hiện gen sau phiên mã.',
+  siRNA: 'siRNA (Small Interfering RNA): ARN can thiệp nhỏ làm bất hoạt biểu hiện gen đặc hiệu.',
   PCR: 'PCR (Polymerase Chain Reaction): Phản ứng chuỗi trùng hợp khuếch đại đặc hiệu đoạn phân tử DNA.',
   'RT-PCR': 'RT-PCR (Reverse Transcription Polymerase Chain Reaction): Phản ứng chuỗi trùng hợp phiên mã ngược.',
+  qPCR: 'qPCR (Quantitative Polymerase Chain Reaction / Real-time PCR): Phản ứng PCR định lượng thời gian thực.',
   ELISA: 'ELISA (Enzyme-Linked Immunosorbent Assay): Xét nghiệm hấp thụ miễn dịch liên kết với enzym.',
+  CLIA: 'CLIA (Chemiluminescence Immunoassay): Xét nghiệm miễn dịch hóa phát quang.',
+  ECLIA: 'ECLIA (Electrochemiluminescence Immunoassay): Xét nghiệm miễn dịch điện hóa phát quang.',
+  HPLC: 'HPLC (High-Performance Liquid Chromatography): Sắc ký lỏng hiệu năng cao.',
+  GC: 'GC (Gas Chromatography): Sắc ký khí.',
+  MS: 'MS (Mass Spectrometry): Khối phổ.',
+  'LC-MS': 'LC-MS (Liquid Chromatography - Mass Spectrometry): Sắc ký lỏng ghép nối khối phổ.',
+  UV: 'UV (Ultraviolet): Tia cực tím / Phổ tử ngoại.',
+  'UV-Vis': 'UV-Vis (Ultraviolet-Visible Spectroscopy): Quang phổ hấp thụ tử ngoại - khả kiến.',
+  IR: 'IR (Infrared Spectroscopy): Quang phổ hồng ngoại.',
+  NMR: 'NMR (Nuclear Magnetic Resonance): Cộng hưởng từ hạt nhân.',
+  SDS: 'SDS (Sodium Dodecyl Sulfate): Chất hoạt động bề mặt biến tính protein.',
+  'SDS-PAGE': 'SDS-PAGE (Sodium Dodecyl Sulfate - Polyacrylamide Gel Electrophoresis): Điện di trên gel polyacrylamid có mặt SDS.',
+  EDTA: 'EDTA (Ethylenediaminetetraacetic Acid): Chất tạo phức chelat chống đông máu bằng cách khóa ion Ca2+.',
+  PBS: 'PBS (Phosphate-Buffered Saline): Dung dịch đệm phosphat đẳng trương.',
+  Tris: 'Tris (Tris(hydroxymethyl)aminomethane): Dung dịch đệm sinh hóa tiêu chuẩn.',
+  DMSO: 'DMSO (Dimethyl Sulfoxide): Dung môi hữu cơ phân cực không proton dùng trong sinh học phân tử và bảo quản tế bào.',
+  BSA: 'BSA (Bovine Serum Albumin): Albumin huyết thanh bò chuẩn định lượng protein.',
+  OD: 'OD (Optical Density): Mật độ quang học đo độ hấp thụ ánh sáng.',
+  CFU: 'CFU (Colony-Forming Unit): Đơn vị hình thành khuẩn lạc vi sinh vật.',
+  MIC: 'MIC (Minimum Inhibitory Concentration): Nồng độ ức chế tối thiểu của kháng sinh đối với vi khuẩn.',
+  MBC: 'MBC (Minimum Bactericidal Concentration): Nồng độ diệt khuẩn tối thiểu.',
+  ATCC: 'ATCC (American Type Culture Collection): Bảo tàng giống chuẩn vi sinh vật Hoa Kỳ.',
   BMI: 'BMI (Body Mass Index): Chỉ số khối cơ thể đánh giá tình trạng dinh dưỡng.',
   ECG: 'ECG (Electrocardiogram): Điện tâm đồ ghi lại hoạt động điện học của tim.',
   EEG: 'EEG (Electroencephalogram): Điện não đồ.',
@@ -149,21 +239,82 @@ export const ACADEMIC_ABBREV_DICTIONARY: Record<string, string> = {
   CT: 'CT (Computed Tomography): Chụp cắt lớp vi tính.',
   ICU: 'ICU (Intensive Care Unit): Khoa Hồi sức tích cực và Chống độc.',
   COPD: 'COPD (Chronic Obstructive Pulmonary Disease): Bệnh phổi tắc nghẽn mạn tính.',
+  ARDS: 'ARDS (Acute Respiratory Distress Syndrome): Hội chứng suy hô hấp cấp tiến triển.',
+  CKD: 'CKD (Chronic Kidney Disease): Bệnh thận mạn tính.',
+  AKI: 'AKI (Acute Kidney Injury): Tổn thương thận cấp.',
+  CVD: 'CVD (Cardiovascular Disease): Bệnh lý tim mạch.',
+  AMI: 'AMI (Acute Myocardial Infarction): Nhồi máu cơ tim cấp.',
+  HF: 'HF (Heart Failure): Suy tim.',
+  CNS: 'CNS (Central Nervous System): Hệ thần kinh trung ương.',
+  PNS: 'PNS (Peripheral Nervous System): Hệ thần kinh ngoại biên.',
+  CSF: 'CSF (Cerebrospinal Fluid): Dịch não tủy.',
+  GI: 'GI (Gastrointestinal): Hệ tiêu hóa.',
   THA: 'THA: Tăng huyết áp.',
   ĐTĐ: 'ĐTĐ: Đái tháo đường (tiểu đường).',
+  RLCH: 'RLCH: Rối loạn chuyển hóa.',
+  RLLP: 'RLLP: Rối loạn lipid máu.',
   BHYT: 'BHYT: Bảo hiểm y tế.',
   BYT: 'BYT: Bộ Y tế.',
+  BV: 'BV: Bệnh viện.',
+  BN: 'BN: Bệnh nhân.',
+  NVYT: 'NVYT: Nhân viên y tế.',
+  CSYT: 'CSYT: Cơ sở y tế.',
+  KCB: 'KCB: Khám chữa bệnh.',
+  CLS: 'CLS: Cận lâm sàng.',
+  LS: 'LS: Lâm sàng.',
+  XN: 'XN: Xét nghiệm.',
+  CĐHA: 'CĐHA: Chẩn đoán hình ảnh.',
+  TDCN: 'TDCN: Thăm dò chức năng.',
+  KSNK: 'KSNK: Kiểm soát nhiễm khuẩn.',
+  NKBV: 'NKBV: Nhiễm khuẩn bệnh viện.',
+  ADR: 'ADR (Adverse Drug Reaction): Phản ứng có hại của thuốc.',
   WHO: 'WHO (World Health Organization): Tổ chức Y tế Thế giới.',
   FDA: 'FDA (Food and Drug Administration): Cục Quản lý Thực phẩm và Dược phẩm Hoa Kỳ.',
+  CDC: 'CDC (Centers for Disease Control and Prevention): Trung tâm Kiểm soát và Phòng ngừa Dịch bệnh.',
+  NIH: 'NIH (National Institutes of Health): Viện Y tế Quốc gia Hoa Kỳ.',
+  CLSI: 'CLSI (Clinical and Laboratory Standards Institute): Viện Tiêu chuẩn Lâm sàng và Xét nghiệm.',
+  ISO: 'ISO (International Organization for Standardization): Tổ chức Tiêu chuẩn hóa Quốc tế.',
+  GLP: 'GLP (Good Laboratory Practice): Thực hành tốt phòng thí nghiệm.',
+  GMP: 'GMP (Good Manufacturing Practice): Thực hành tốt sản xuất thuốc.',
+  GCP: 'GCP (Good Clinical Practice): Thực hành tốt thử nghiệm lâm sàng.',
+  SOP: 'SOP (Standard Operating Procedure): Quy trình thao tác chuẩn.',
+  QC: 'QC (Quality Control): Kiểm soát chất lượng (Nội kiểm tra chất lượng xét nghiệm).',
+  IQC: 'IQC (Internal Quality Control): Nội kiểm tra chất lượng xét nghiệm.',
+  EQA: 'EQA (External Quality Assessment): Ngoại kiểm tra chất lượng xét nghiệm.',
+  QA: 'QA (Quality Assurance): Đảm bảo chất lượng.',
+  SD: 'SD (Standard Deviation): Độ lệch chuẩn thống kê.',
+  CV: 'CV (Coefficient of Variation): Hệ số biến thiên đánh giá độ chụm xét nghiệm.',
+  CI: 'CI (Confidence Interval): Khoảng tin cậy thống kê.',
+  OR: 'OR (Odds Ratio): Tỷ số chênh trong nghiên cứu dịch tễ học.',
+  RR: 'RR (Relative Risk): Nguy cơ tương đối.',
+  ROC: 'ROC (Receiver Operating Characteristic): Đường cong đặc tính hoạt động của phép thử chẩn đoán.',
+  AUC: 'AUC (Area Under the Curve): Diện tích dưới đường cong ROC.',
+  ANOVA: 'ANOVA (Analysis of Variance): Phân tích phương sai.',
+  SPSS: 'SPSS (Statistical Package for the Social Sciences): Phần mềm thống kê phân tích dữ liệu y sinh.',
   IgG: 'IgG (Immunoglobulin G): Kháng thể miễn dịch lớp G phổ biến nhất trong huyết thanh.',
   IgM: 'IgM (Immunoglobulin M): Kháng thể miễn dịch lớp M xuất hiện sớm trong đáp ứng miễn dịch cấp.',
   IgA: 'IgA (Immunoglobulin A): Kháng thể miễn dịch tiết bảo vệ bề mặt niêm mạc.',
   IgE: 'IgE (Immunoglobulin E): Kháng thể miễn dịch lớp E liên quan đến phản ứng dị ứng và ký sinh trùng.',
+  IgD: 'IgD (Immunoglobulin D): Kháng thể miễn dịch lớp D trên bề mặt tế bào lympho B.',
+  HLA: 'HLA (Human Leukocyte Antigen): Hệ thống kháng nguyên bạch cầu người (phức hợp hòa hợp mô chính).',
+  MHC: 'MHC (Major Histocompatibility Complex): Phức hợp hòa hợp mô chính.',
+  IL: 'IL (Interleukin): Nhóm cytokine điều hòa đáp ứng miễn dịch và phản ứng viêm.',
+  TNF: 'TNF (Tumor Necrosis Factor): Yếu tố hoại tử khối u.',
+  'TNF-α': 'TNF-α (Tumor Necrosis Factor-alpha): Yếu tố hoại tử khối u alpha thúc đẩy phản ứng viêm cấp.',
+  IFN: 'IFN (Interferon): Cytokine kháng virus và điều hòa miễn dịch.',
+  HIV: 'HIV (Human Immunodeficiency Virus): Virus gây suy giảm miễn dịch ở người.',
+  HBV: 'HBV (Hepatitis B Virus): Virus viêm gan B.',
+  HCV: 'HCV (Hepatitis C Virus): Virus viêm gan C.',
+  HBsAg: 'HBsAg (Hepatitis B Surface Antigen): Kháng nguyên bề mặt của virus viêm gan B.',
   IC50: 'IC50 (Half Maximal Inhibitory Concentration): Nồng độ ức chế 50% hoạt tính sinh học hoặc enzym.',
   EC50: 'EC50 (Half Maximal Effective Concentration): Nồng độ có hiệu lực đạt 50% đáp ứng tối đa.',
+  LD50: 'LD50 (Median Lethal Dose): Liều gây chết trung bình 50% cá thể thí nghiệm.',
   Vmax: 'Vmax (Maximum Velocity): Vận tốc phản ứng cực đại khi enzym bão hòa cơ chất.',
   Km: 'Km (Michaelis Constant): Hằng số Michaelis biểu thị ái lực của enzym đối với cơ chất.',
+  kcat: 'kcat (Catalytic Constant / Turnover Number): Hằng số xúc tác biểu thị số phân tử cơ chất được chuyển hóa bởi một tâm hoạt động enzym trong một giây.',
   SpO2: 'SpO2 (Peripheral Capillary Oxygen Saturation): Độ bão hòa oxy trong máu ngoại vi.',
+  PaO2: 'PaO2 (Partial Pressure of Arterial Oxygen): Phân áp oxy trong máu động mạch.',
+  PaCO2: 'PaCO2 (Partial Pressure of Arterial Carbon Dioxide): Phân áp khí cacbonic trong máu động mạch.',
 
   // Giáo dục - Hành chính - Kinh tế - CNTT
   BGDĐT: 'BGDĐT: Bộ Giáo dục và Đào tạo.',
@@ -318,6 +469,8 @@ const CHAPTER_HEADING_REGEX =
   /^(?:(?:MỤC|PHẦN|CHƯƠNG|Chương|Phần)\s+([0-9]+|[IVXLC]+))\b/i;
 
 const TOC_HEADING_REGEX = /^(MỤC\s+LỤC|TABLE\s+OF\s+CONTENTS)$/i;
+const PREFACE_HEADING_REGEX =
+  /^(LỜI\s+GIỚI\s+THIỆU|LỜI\s+NÓI\s+ĐẦU|LỜI\s+CẢM\s+ƠN|LỜI\s+CAM\s+ĐOAN|LỜI\s+TỰA|TÓM\s+TẮT(?:\s+ĐỀ\s+ÁN|\s+LUẬN\s+VĂN|\s+KHÓA\s+LUẬN)?)$/i;
 const ABBREV_SECTION_HEADING_REGEX =
   /^(DANH\s+MỤC\s+(?:CÁC\s+)?(?:TỪ\s+VIẾT\s+TẮT|CHỮ\s+VIẾT\s+TẮT|KÝ\s+HIỆU(?:\s+VÀ\s+CHỮ\s+VIẾT\s+TẮT)?)|BẢNG\s+CHỮ\s+VIẾT\s+TẮT|LIST\s+OF\s+ABBREVIATIONS)$/i;
 const TABLE_CATALOG_HEADING_REGEX =
@@ -325,7 +478,7 @@ const TABLE_CATALOG_HEADING_REGEX =
 const FIGURE_CATALOG_HEADING_REGEX =
   /^(DANH\s+MỤC\s+(?:CÁC\s+)?(?:HÌNH(?:\s+ẢNH|\s+VẼ)?|ẢNH|SƠ\s+ĐỒ|BIỂU\s+ĐỒ)|LIST\s+OF\s+FIGURES)$/i;
 const BODY_START_HEADING_REGEX =
-  /^(MỞ\s+ĐẦU|LỜI\s+MỞ\s+ĐẦU|ĐẶT\s+VẤN\s+ĐỀ|GIỚI\s+THIỆU|PHẦN\s+MỞ\s+ĐẦU|CHƯƠNG\s+(?:1|I)\b|PHẦN\s+(?:1|I)\b)/i;
+  /^(MỞ\s+ĐẦU|ĐẶT\s+VẤN\s+ĐỀ|PHẦN\s+MỞ\s+ĐẦU|CHƯƠNG\s+(?:1|I)\b|PHẦN\s+(?:1|I)\b)/i;
 
 function normalizeCaptionNumber(numRaw: string): string {
   return numRaw.replace(/\s+/g, '').replace(/[-_]/g, '.');
@@ -468,6 +621,7 @@ export async function analyzeWordThesisDocx(
 
   // Identify front-matter zones & where main content (Chương 1 / Mở đầu) starts
   const tocZones: ThesisTocZones = {
+    prefaceEndNodeIndex: -1,
     mainTocStartNodeIndex: -1,
     mainTocEndNodeIndex: -1,
     abbrevStartNodeIndex: -1,
@@ -481,7 +635,7 @@ export async function analyzeWordThesisDocx(
   };
 
   const detectedChapters: Array<{ number: number; title: string; xmlNodeIndex: number }> = [];
-  let activeFront: 'none' | 'toc' | 'abbrev' | 'fig_toc' | 'tbl_toc' = 'none';
+  let activeFront: 'none' | 'preface' | 'toc' | 'abbrev' | 'fig_toc' | 'tbl_toc' = 'none';
   let bodyStarted = false;
 
   for (let i = 0; i < nodes.length; i++) {
@@ -489,6 +643,12 @@ export async function analyzeWordThesisDocx(
     if (!raw) continue;
     const clean = raw.replace(/^[0-9IVXLC]+\.\s*/, '').trim();
     const isDotLeaderTocLine = /(?:\s*\.\s*){4,}\s*\d+\s*$/.test(raw) || /\t\d+$/.test(raw);
+
+    if (!bodyStarted && !isDotLeaderTocLine && PREFACE_HEADING_REGEX.test(clean)) {
+      tocZones.prefaceEndNodeIndex = i;
+      activeFront = 'preface';
+      continue;
+    }
 
     if (!bodyStarted && TOC_HEADING_REGEX.test(clean)) {
       tocZones.mainTocStartNodeIndex = i;
@@ -554,7 +714,9 @@ export async function analyzeWordThesisDocx(
     }
 
     if (!bodyStarted) {
-      if (activeFront === 'abbrev') {
+      if (activeFront === 'preface') {
+        tocZones.prefaceEndNodeIndex = i;
+      } else if (activeFront === 'abbrev') {
         tocZones.abbrevEndNodeIndex = i;
         if (nodes[i].inTableIndex >= 0 && tocZones.abbrevTableIndex < 0) {
           tocZones.abbrevTableIndex = nodes[i].inTableIndex;
@@ -614,17 +776,19 @@ export async function analyzeWordThesisDocx(
   // NEVER by a figure/table's own wrong caption number (such as "Hình 20.1" inside Chương 1)!
   let currentChapter = 1;
   const drawingNodesSatisfiedByCaption = new Set<number>();
+  const tablesSatisfiedByCaption = new Set<number>();
 
   interface RawBodyEvent {
-    type: 'figure_caption' | 'unlabelled_drawing' | 'table_caption';
+    type: 'figure_caption' | 'unlabelled_drawing' | 'table_caption' | 'unlabelled_table';
     xmlNodeIndex: number;
     actualChapter: number;
+    tableIndex?: number;
     entry?: ThesisCatalogEntry;
   }
 
   const bodyEvents: RawBodyEvent[] = [];
 
-  // Pass 1: Find all figure & table captions and record which drawing nodes they label
+  // Pass 1: Find all figure & table captions and record which drawing/table nodes they label
   for (let i = scanStart; i < nodes.length; i++) {
     if (isInsideFrontCatalog(i)) continue;
     const node = nodes[i];
@@ -676,6 +840,7 @@ export async function analyzeWordThesisDocx(
           for (let k = Math.max(0, i - 3); k <= Math.min(nodes.length - 1, i + 6); k++) {
             if (nodes[k].inTableIndex >= 0) {
               hasAdjTable = true;
+              tablesSatisfiedByCaption.add(nodes[k].inTableIndex);
               break;
             }
           }
@@ -759,8 +924,10 @@ export async function analyzeWordThesisDocx(
     }
   }
 
-  // Pass 2: Check for standalone embedded drawings (<w:drawing>) in body that have NO caption nearby
+  // Pass 2: Check for standalone embedded drawings (<w:drawing>) and uncaptioned tables (<w:tbl>) in body
   currentChapter = 1;
+  const seenUncaptionedTables = new Set<number>();
+
   for (let i = scanStart; i < nodes.length; i++) {
     if (isInsideFrontCatalog(i)) continue;
     const node = nodes[i];
@@ -772,17 +939,44 @@ export async function analyzeWordThesisDocx(
       if (chapNum !== null && chapNum >= 1 && chapNum <= 30) {
         currentChapter = chapNum;
       }
+    } else if (
+      node.isHeading &&
+      detectedChapters.length === 0 &&
+      /^(\d+)\.\s+[A-ZÀ-Ỹ]/.test(text) &&
+      !/^(\d+\.\d+)/.test(text)
+    ) {
+      const m = text.match(/^(\d+)\.\s+/);
+      if (m) {
+        const cNum = parseInt(m[1], 10);
+        if (cNum >= 1 && cNum <= 15) currentChapter = cNum;
+      }
     }
 
+    // Uncaptioned image / drawing in body
     if (
       node.hasDrawing &&
       node.inTableIndex < 0 &&
-      !drawingNodesSatisfiedByCaption.has(i) &&
-      figuresCatalog.length > 0
+      !drawingNodesSatisfiedByCaption.has(i)
     ) {
       bodyEvents.push({
         type: 'unlabelled_drawing',
         xmlNodeIndex: i,
+        actualChapter: currentChapter,
+      });
+    }
+
+    // Uncaptioned table in body
+    if (
+      node.inTableIndex >= 0 &&
+      node.inTableIndex !== tocZones.abbrevTableIndex &&
+      !tablesSatisfiedByCaption.has(node.inTableIndex) &&
+      !seenUncaptionedTables.has(node.inTableIndex)
+    ) {
+      seenUncaptionedTables.add(node.inTableIndex);
+      bodyEvents.push({
+        type: 'unlabelled_table',
+        xmlNodeIndex: i,
+        tableIndex: node.inTableIndex,
         actualChapter: currentChapter,
       });
     }
@@ -795,7 +989,7 @@ export async function analyzeWordThesisDocx(
   // ==========================================================================
   const issues: ThesisAuditIssue[] = [];
 
-  // 1. Audit Figures by `actualChapter` (Chương 1 -> Hình 1.1., Hình 1.2....)
+  // 1. Audit Figures by `actualChapter` (Chương 1 -> Hình 1.1, Hình 1.2....)
   const figEventsByChap = new Map<number, RawBodyEvent[]>();
   for (const ev of bodyEvents) {
     if (ev.type === 'figure_caption' || ev.type === 'unlabelled_drawing') {
@@ -824,26 +1018,43 @@ export async function analyzeWordThesisDocx(
           if (futEv.type === 'figure_caption' && futEv.entry) {
             const futExpected = `${chapNum}.${futureSeq}`;
             if (futEv.entry.numberStr !== futExpected) {
-              const futTitle = futEv.entry.title || `Hình minh họa ${futExpected}`;
+              const futTitle = futEv.entry.title.trim();
               cascadeUpdates.push({
                 xmlNodeIndex: futEv.xmlNodeIndex,
                 oldNumberStr: `Hình ${futEv.entry.numberStr}`,
                 newNumberStr: `Hình ${futExpected}`,
-                newText: `Hình ${futExpected}. ${futTitle}`,
+                newText: futTitle ? `Hình ${futExpected}. ${futTitle}` : `Hình ${futExpected}`,
               });
             }
           }
         }
 
+        const minimalFigCaption = `Hình ${expectedNum}`;
+        // Add to figuresCatalog so Danh mục hình includes this newly captioned figure
+        figuresCatalog.push({
+          id: `fig-unlabelled-${ev.xmlNodeIndex}`,
+          kind: 'figure',
+          prefix: 'Hình',
+          numberStr: expectedNum,
+          expectedNumberStr: expectedNum,
+          chapterNum: chapNum,
+          actualChapter: chapNum,
+          seqNum: seq,
+          title: '',
+          fullCaption: minimalFigCaption,
+          hasAdjacentMedia: true,
+          xmlNodeIndex: ev.xmlNodeIndex,
+        });
+
         issues.push({
           id: `issue-fig-unlabelled-${ev.xmlNodeIndex}`,
           category: 'figure',
           severity: 'error',
-          title: `Phát hiện hình ảnh tại Chương ${chapNum} chưa gắn nhãn (Lẽ ra là Hình ${expectedNum})`,
-          description: `Hình ảnh nhúng tại đoạn #${ev.xmlNodeIndex + 1} (Chương ${chapNum}) chưa có dòng chú thích tên hình bên dưới, làm lệch số thứ tự các hình phía sau trong Chương ${chapNum}.`,
+          title: `Hình ảnh tại Chương ${chapNum} chưa có chú thích → Chèn "${minimalFigCaption}"`,
+          description: `Hình ảnh tại đoạn #${ev.xmlNodeIndex + 1} (Chương ${chapNum}) chưa có chú thích hình. Tự động chèn nhãn "${minimalFigCaption}" bên dưới ảnh và cập nhật lại số thứ tự Chương ${chapNum}.`,
           locationLabel: `Chương ${chapNum} • Đoạn #${ev.xmlNodeIndex + 1}`,
-          currentText: '(Hình ảnh chưa có dòng chú thích Hình X.Y)',
-          suggestedFixText: `Hình ${expectedNum}. Hình minh họa thực tế tại Chương ${chapNum}`,
+          currentText: '(Hình ảnh chưa có chú thích)',
+          suggestedFixText: minimalFigCaption,
           xmlNodeIndex: ev.xmlNodeIndex,
           fixAction: 'insert_caption_after_node',
           cascadeUpdates,
@@ -856,17 +1067,16 @@ export async function analyzeWordThesisDocx(
       const prevCount = seenNumsInChap.get(entry.numberStr) || 0;
       seenNumsInChap.set(entry.numberStr, prevCount + 1);
 
-      const cleanTitle = entry.title || `Mô hình minh họa ${expectedNum}`;
-      const standardText = `Hình ${expectedNum}. ${cleanTitle}`;
+      const cleanTitle = entry.title.trim();
+      const standardText = cleanTitle ? `Hình ${expectedNum}. ${cleanTitle}` : `Hình ${expectedNum}`;
 
       if (entry.chapterNum !== null && entry.chapterNum !== chapNum) {
-        // User's exact bug report: Inside Chương 1, figure is written as "Hình 20.1" instead of "Hình 1.1"!
         issues.push({
           id: `issue-fig-wrongchap-${entry.xmlNodeIndex}`,
           category: 'figure',
           severity: 'error',
           title: `Sai số chương: Đang ở Chương ${chapNum} nhưng ghi "${entry.prefix} ${entry.numberStr}" → Sửa thành "Hình ${expectedNum}"`,
-          description: `Hình này thuộc Chương ${chapNum} (vị trí hình thứ ${seq} của Chương ${chapNum}) nhưng đang đánh số là "${entry.prefix} ${entry.numberStr}". Hệ thống tự động chuẩn hóa về đúng Chương ${chapNum}: "Hình ${expectedNum}."`,
+          description: `Hình này thuộc Chương ${chapNum} (vị trí hình thứ ${seq} của Chương ${chapNum}) nhưng đang đánh số là "${entry.prefix} ${entry.numberStr}". Hệ thống tự động chuẩn hóa về đúng Chương ${chapNum}: "${standardText}"`,
           locationLabel: `Chương ${chapNum} • Đoạn #${entry.xmlNodeIndex + 1}`,
           currentText: entry.fullCaption,
           suggestedFixText: standardText,
@@ -879,7 +1089,7 @@ export async function analyzeWordThesisDocx(
           category: 'figure',
           severity: 'error',
           title: `Trùng số thứ tự Hình ${entry.numberStr} trong Chương ${chapNum} → Sửa thành Hình ${expectedNum}`,
-          description: `Số hiệu "${entry.numberStr}" đã xuất hiện trước đó trong Chương ${chapNum}. Đổi thành "Hình ${expectedNum}." để đảm bảo thứ tự liên tục.`,
+          description: `Số hiệu "${entry.numberStr}" đã xuất hiện trước đó trong Chương ${chapNum}. Đổi thành "${standardText}" để đảm bảo thứ tự liên tục.`,
           locationLabel: `Chương ${chapNum} • Đoạn #${entry.xmlNodeIndex + 1}`,
           currentText: entry.fullCaption,
           suggestedFixText: standardText,
@@ -903,27 +1113,89 @@ export async function analyzeWordThesisDocx(
     }
   }
 
-  // 2. Audit Tables by `actualChapter` (Chương 1 -> Bảng 1.1., Bảng 1.2....)
-  const tblEventsByChap = new Map<number, ThesisCatalogEntry[]>();
-  for (const tbl of tablesCatalog) {
-    const arr = tblEventsByChap.get(tbl.actualChapter) || [];
-    arr.push(tbl);
-    tblEventsByChap.set(tbl.actualChapter, arr);
+  // Sort figuresCatalog by xmlNodeIndex so unlabelled figures appear in exact document order
+  figuresCatalog.sort((a, b) => a.xmlNodeIndex - b.xmlNodeIndex);
+
+  // 2. Audit Tables by `actualChapter` (Chương 1 -> Bảng 1.1, Bảng 1.2....) including uncaptioned tables
+  const tblEventsByChap = new Map<number, RawBodyEvent[]>();
+  for (const ev of bodyEvents) {
+    if (ev.type === 'table_caption' || ev.type === 'unlabelled_table') {
+      const arr = tblEventsByChap.get(ev.actualChapter) || [];
+      arr.push(ev);
+      tblEventsByChap.set(ev.actualChapter, arr);
+    }
   }
 
-  for (const [chapNum, tblList] of tblEventsByChap.entries()) {
+  for (const [chapNum, evList] of tblEventsByChap.entries()) {
+    let seq = 0;
     const seenTblNums = new Map<string, number>();
 
-    tblList.forEach((tbl, idx) => {
-      const seq = idx + 1;
+    for (let idx = 0; idx < evList.length; idx++) {
+      const ev = evList[idx];
+      seq++;
       const expectedNum = `${chapNum}.${seq}`;
+
+      if (ev.type === 'unlabelled_table') {
+        const cascadeUpdates: CascadeUpdateItem[] = [];
+        let futureSeq = seq;
+        for (let fIdx = idx + 1; fIdx < evList.length; fIdx++) {
+          futureSeq++;
+          const futEv = evList[fIdx];
+          if (futEv.type === 'table_caption' && futEv.entry) {
+            const futExpected = `${chapNum}.${futureSeq}`;
+            if (futEv.entry.numberStr !== futExpected) {
+              const futTitle = futEv.entry.title.trim();
+              cascadeUpdates.push({
+                xmlNodeIndex: futEv.xmlNodeIndex,
+                oldNumberStr: `Bảng ${futEv.entry.numberStr}`,
+                newNumberStr: `Bảng ${futExpected}`,
+                newText: futTitle ? `Bảng ${futExpected}. ${futTitle}` : `Bảng ${futExpected}`,
+              });
+            }
+          }
+        }
+
+        const minimalTblCaption = `Bảng ${expectedNum}`;
+        tablesCatalog.push({
+          id: `tbl-unlabelled-${ev.xmlNodeIndex}`,
+          kind: 'table',
+          prefix: 'Bảng',
+          numberStr: expectedNum,
+          expectedNumberStr: expectedNum,
+          chapterNum: chapNum,
+          actualChapter: chapNum,
+          seqNum: seq,
+          title: '',
+          fullCaption: minimalTblCaption,
+          hasAdjacentMedia: true,
+          xmlNodeIndex: ev.xmlNodeIndex,
+        });
+
+        issues.push({
+          id: `issue-tbl-unlabelled-${ev.xmlNodeIndex}`,
+          category: 'table',
+          severity: 'error',
+          title: `Bảng biểu tại Chương ${chapNum} chưa có chú thích → Chèn "${minimalTblCaption}"`,
+          description: `Bảng biểu tại đoạn #${ev.xmlNodeIndex + 1} (Chương ${chapNum}) chưa có chú thích bảng. Tự động chèn nhãn "${minimalTblCaption}" phía trên bảng và cập nhật thứ tự Chương ${chapNum}.`,
+          locationLabel: `Chương ${chapNum} • Bảng #${(ev.tableIndex ?? 0) + 1}`,
+          currentText: '(Bảng chưa có chú thích)',
+          suggestedFixText: minimalTblCaption,
+          xmlNodeIndex: ev.xmlNodeIndex,
+          tableIndex: ev.tableIndex,
+          fixAction: 'insert_caption_before_table',
+          cascadeUpdates,
+        });
+        continue;
+      }
+
+      const tbl = ev.entry!;
       tbl.expectedNumberStr = expectedNum;
 
       const prevCount = seenTblNums.get(tbl.numberStr) || 0;
       seenTblNums.set(tbl.numberStr, prevCount + 1);
 
-      const cleanTitle = tbl.title || `Bảng dữ liệu ${expectedNum}`;
-      const standardText = `Bảng ${expectedNum}. ${cleanTitle}`;
+      const cleanTitle = tbl.title.trim();
+      const standardText = cleanTitle ? `Bảng ${expectedNum}. ${cleanTitle}` : `Bảng ${expectedNum}`;
 
       if (tbl.chapterNum !== null && tbl.chapterNum !== chapNum) {
         issues.push({
@@ -931,7 +1203,7 @@ export async function analyzeWordThesisDocx(
           category: 'table',
           severity: 'error',
           title: `Sai số chương: Đang ở Chương ${chapNum} nhưng ghi "Bảng ${tbl.numberStr}" → Sửa thành "Bảng ${expectedNum}"`,
-          description: `Bảng này thuộc Chương ${chapNum} (bảng thứ ${seq} của Chương ${chapNum}) nhưng đang ghi số hiệu là "Bảng ${tbl.numberStr}". Đổi thành "Bảng ${expectedNum}."`,
+          description: `Bảng này thuộc Chương ${chapNum} (bảng thứ ${seq} của Chương ${chapNum}) nhưng đang ghi số hiệu là "Bảng ${tbl.numberStr}". Đổi thành "${standardText}"`,
           locationLabel: `Chương ${chapNum} • Đoạn #${tbl.xmlNodeIndex + 1}`,
           currentText: tbl.fullCaption,
           suggestedFixText: standardText,
@@ -944,7 +1216,7 @@ export async function analyzeWordThesisDocx(
           category: 'table',
           severity: 'error',
           title: `Trùng số hiệu Bảng ${tbl.numberStr} trong Chương ${chapNum} → Sửa thành Bảng ${expectedNum}`,
-          description: `Số hiệu Bảng ${tbl.numberStr} bị lặp lại. Chuẩn hóa thành "Bảng ${expectedNum}."`,
+          description: `Số hiệu Bảng ${tbl.numberStr} bị lặp lại. Chuẩn hóa thành "${standardText}"`,
           locationLabel: `Chương ${chapNum} • Đoạn #${tbl.xmlNodeIndex + 1}`,
           currentText: tbl.fullCaption,
           suggestedFixText: standardText,
@@ -965,8 +1237,10 @@ export async function analyzeWordThesisDocx(
           fixAction: 'replace_paragraph_text',
         });
       }
-    });
+    }
   }
+
+  tablesCatalog.sort((a, b) => a.xmlNodeIndex - b.xmlNodeIndex);
 
   onProgress?.('Đang quét Từ viết tắt (CK, α-amylase, HbA1c, CNTT...) & tổng hợp 3 Danh mục...', 'Kiểm tra giải nghĩa chuyên ngành', 88);
   await new Promise(r => setTimeout(r, 20));
@@ -1285,7 +1559,7 @@ function buildCleanWordParagraphXml(
 }
 
 /**
- * Inserts or updates the 3 Front-Matter Catalogs right AFTER "Mục lục" and BEFORE Main Content:
+ * Inserts or updates the 3 Front-Matter Catalogs right BEFORE "Mục lục" and AFTER Intro ("Lời giới thiệu", "Lời nói đầu"):
  *   1. Danh mục hình (Hình 1.1. ..., Hình 1.2. ...)
  *   2. Danh mục bảng (Bảng 1.1. ..., Bảng 1.2. ...)
  *   3. Danh mục từ viết tắt (1. CK (Creatine Kinase): ..., 2. α-amylase: ..., 3. HbA1c: ...)
@@ -1323,11 +1597,12 @@ export function insertThreeCatalogsAfterTocToZip(
           (customFixInputs && customFixInputs[relatedIssue.id]) ||
           relatedIssue.suggestedFixText;
       } else {
-        const cleanTitle = fig.title || fig.fullCaption;
-        finalLine = `Hình ${fig.expectedNumberStr}. ${cleanTitle.replace(
-          /^(?:Hình|Ảnh|Sơ\s+đồ|Biểu\s+đồ)\s+[0-9.]+\s*[:.–\-]?\s*/i,
-          ''
-        )}`;
+        const cleanTitle = (fig.title || '')
+          .replace(/^(?:Hình|Ảnh|Sơ\s+đồ|Biểu\s+đồ)\s+[0-9.]+\s*[:.–\-]?\s*/i, '')
+          .trim();
+        finalLine = cleanTitle
+          ? `Hình ${fig.expectedNumberStr}. ${cleanTitle}`
+          : `Hình ${fig.expectedNumberStr}`;
       }
       catalogBlocksXml.push(
         buildCleanWordParagraphXml(finalLine, {
@@ -1363,11 +1638,12 @@ export function insertThreeCatalogsAfterTocToZip(
           (customFixInputs && customFixInputs[relatedIssue.id]) ||
           relatedIssue.suggestedFixText;
       } else {
-        const cleanTitle = tbl.title || tbl.fullCaption;
-        finalLine = `Bảng ${tbl.expectedNumberStr}. ${cleanTitle.replace(
-          /^Bảng\s+[0-9.]+\s*[:.–\-]?\s*/i,
-          ''
-        )}`;
+        const cleanTitle = (tbl.title || '')
+          .replace(/^Bảng\s+[0-9.]+\s*[:.–\-]?\s*/i, '')
+          .trim();
+        finalLine = cleanTitle
+          ? `Bảng ${tbl.expectedNumberStr}. ${cleanTitle}`
+          : `Bảng ${tbl.expectedNumberStr}`;
       }
       catalogBlocksXml.push(
         buildCleanWordParagraphXml(finalLine, {
@@ -1435,11 +1711,13 @@ export function insertThreeCatalogsAfterTocToZip(
 
   const wrappedCatalogXml = `<!-- AZTOOL_THREE_CATALOGS_START -->${fullCatalogXml}<!-- AZTOOL_THREE_CATALOGS_END -->`;
 
-  // Target insertion point:
-  // Right AFTER "Mục lục" (`mainTocEndNodeIndex`) and BEFORE `bodyStartNodeIndex` (Chương 1 / Mở đầu)!
+  // Target insertion point per user instruction:
+  // Right BEFORE "Mục lục" (`mainTocStartNodeIndex`) and AFTER Intro ("Lời giới thiệu", "Lời nói đầu" -> `prefaceEndNodeIndex`)!
   const insertBeforeParaIdx =
-    report.tocZones.mainTocEndNodeIndex >= 0
-      ? report.tocZones.mainTocEndNodeIndex + 1
+    report.tocZones.mainTocStartNodeIndex >= 0
+      ? report.tocZones.mainTocStartNodeIndex
+      : report.tocZones.prefaceEndNodeIndex >= 0
+      ? report.tocZones.prefaceEndNodeIndex + 1
       : report.tocZones.bodyStartNodeIndex > 0
       ? report.tocZones.bodyStartNodeIndex
       : report.detectedChapters.length > 0
@@ -1505,7 +1783,6 @@ export function applySurgicalFixToZip(
   }
 
   if (issue.fixAction === 'insert_caption_after_node') {
-    // First apply cascade updates to later nodes (in reverse order or in-place replace)
     if (issue.cascadeUpdates && issue.cascadeUpdates.length > 0) {
       for (const casc of issue.cascadeUpdates) {
         replaceParagraphTextInZip(zip, casc.xmlNodeIndex, casc.newText);
@@ -1536,6 +1813,43 @@ export function applySurgicalFixToZip(
       }
       currentIdx++;
     }
+    return false;
+  }
+
+  if (issue.fixAction === 'insert_caption_before_table') {
+    if (issue.cascadeUpdates && issue.cascadeUpdates.length > 0) {
+      for (const casc of issue.cascadeUpdates) {
+        replaceParagraphTextInZip(zip, casc.xmlNodeIndex, casc.newText);
+      }
+    }
+
+    const docFile = zip.file('word/document.xml');
+    if (!docFile) return false;
+    const xml = docFile.asText();
+
+    const captionXml = buildCleanWordParagraphXml(customText, {
+      bold: true,
+      italic: false,
+      fontSizeHalfPt: 26,
+      align: 'left',
+      spaceBeforeTwips: 120,
+      spaceAfterTwips: 60,
+    });
+
+    if (typeof issue.tableIndex === 'number' && issue.tableIndex >= 0) {
+      const tblRegex = /<w:tbl\b[\s\S]*?<\/w:tbl>/g;
+      let tm: RegExpExecArray | null;
+      let tIdx = 0;
+      while ((tm = tblRegex.exec(xml)) !== null) {
+        if (tIdx === issue.tableIndex) {
+          const newXml = xml.slice(0, tm.index) + captionXml + xml.slice(tm.index);
+          zip.file('word/document.xml', newXml);
+          return true;
+        }
+        tIdx++;
+      }
+    }
+
     return false;
   }
 

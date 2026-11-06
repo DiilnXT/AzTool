@@ -12,7 +12,7 @@ export const POPULAR_GEMINI_MODELS = [
 export function getAvailableKeys(apiKeysStr?: string): string[] {
   let rawPool = apiKeysStr || '';
 
-  if (!rawPool.trim() && typeof window !== 'undefined') {
+  if (typeof window !== 'undefined') {
     try {
       const fromUser = localStorage.getItem('aztool_current_user');
       if (fromUser) {
@@ -26,6 +26,8 @@ export function getAvailableKeys(apiKeysStr?: string): string[] {
       }
       const fromLegacy = localStorage.getItem('deq_gemini_keys');
       if (fromLegacy) rawPool += ',' + fromLegacy;
+      const fromSingle = localStorage.getItem('deq_gemini_api_key');
+      if (fromSingle) rawPool += ',' + fromSingle;
     } catch {
       // ignore storage errors
     }

@@ -146,43 +146,56 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
 
-      {/* Top-Right Compact Notification Stack & Live Loading HUD */}
-      <div className="fixed top-16 right-4 z-[120] flex flex-col items-end gap-2.5 w-full max-w-sm pointer-events-none px-2 sm:px-0">
-        {/* Active Loading HUD Card with Animated Calligraphy Az Logo & Live % */}
-        {activeLoading && (
-          <div className="pointer-events-auto w-full rounded-2xl bg-white/95 dark:bg-[#141724]/95 backdrop-blur-xl border-2 border-[#7d2ae8]/40 shadow-2xl shadow-purple-500/15 p-3.5 transition-all duration-300 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-3">
-              <div className="shrink-0">
-                <DeQLogo size="sm" showSubtitle={false} isLoadingMode />
+      {/* CENTERED FULLSCREEN LOADING MODAL HUD (On Laptop & Mobile) */}
+      {activeLoading && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl bg-white/95 dark:bg-[#131624]/95 border-2 border-[#7d2ae8]/50 shadow-[0_24px_80px_-12px_rgba(125,42,232,0.45)] p-7 sm:p-8 flex flex-col items-center text-center gap-4 overflow-hidden">
+            {/* Ambient top glow bar */}
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4]" />
+
+            {/* Animated Calligraphy Logo + Orbiting Ring */}
+            <div className="relative flex items-center justify-center pt-1">
+              <DeQLogo size="lg" showSubtitle={false} isLoadingMode />
+            </div>
+
+            {/* Big Prominent Percentage Counter */}
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4] text-white font-mono text-base sm:text-lg font-black shadow-lg shadow-purple-500/25">
+              <span>ĐANG XỬ LÝ • {displayProgress}%</span>
+            </div>
+
+            {/* Title & Subtitle */}
+            <div className="space-y-1.5 max-w-sm">
+              <h4 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white leading-snug">
+                {activeLoading.title}
+              </h4>
+              {activeLoading.subtitle && (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                  {activeLoading.subtitle}
+                </p>
+              )}
+            </div>
+
+            {/* Wide Smooth Gradient Progress Bar */}
+            <div className="w-full space-y-1.5 pt-1">
+              <div className="w-full h-3 rounded-full bg-neutral-100 dark:bg-neutral-800/90 p-0.5 overflow-hidden shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4] transition-all duration-200 ease-out"
+                  style={{
+                    width: `${Math.max(6, Math.min(100, displayProgress))}%`,
+                  }}
+                />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-extrabold canva-gradient-text truncate">
-                    {activeLoading.title}
-                  </p>
-                  <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-[#00c4cc] to-[#7d2ae8] text-white shrink-0 shadow-xs">
-                    {displayProgress}%
-                  </span>
-                </div>
-                {activeLoading.subtitle && (
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                    {activeLoading.subtitle}
-                  </p>
-                )}
-                {/* Smooth Progress Bar */}
-                <div className="w-full h-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden mt-2">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4] transition-all duration-200 ease-out"
-                    style={{
-                      width: `${Math.max(5, Math.min(100, displayProgress))}%`,
-                    }}
-                  />
-                </div>
+              <div className="flex items-center justify-between text-[10px] font-bold text-neutral-400 px-1">
+                <span>AzTool Pro Engine</span>
+                <span className="font-mono text-[#7d2ae8] dark:text-purple-300">{displayProgress}% / 100%</span>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
+      {/* Top-Right Compact Notification Stack */}
+      <div className="fixed top-16 right-4 z-[140] flex flex-col items-end gap-2.5 w-full max-w-sm pointer-events-none px-2 sm:px-0">
         {/* Toast Messages */}
         {toasts.map(item => {
           const styleMap = {

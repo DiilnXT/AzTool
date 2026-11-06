@@ -179,9 +179,9 @@ function MainApp() {
     },
     {
       id: 'pdf-studio' as const,
-      step: '20 CÔNG CỤ PRO',
-      title: 'PDF & Office Studio',
-      desc: 'PDF/Scan ⇄ Word/Excel/PPT & Sửa PDF',
+      step: 'CẮT PDF & AI OCR EXCEL',
+      title: 'Cắt PDF & OCR Excel',
+      desc: 'Cắt trang PDF & Ảnh/Scan ➔ Excel',
       icon: FileSpreadsheet,
       gradient: 'from-rose-500 via-orange-500 to-amber-500',
       activeRing: 'ring-rose-500 border-rose-500 bg-rose-50/60 dark:bg-rose-950/30',

@@ -3265,7 +3265,7 @@ export async function extractImagesFromPdf(
 //     Giữ nguyên 100% Bảng biểu, Chữ cái, Cột/Ô, Định dạng màu nền, Đường kẻ, Gộp ô!
 // ============================================================================
 
-interface ExcelExtractedCell {
+export interface ExcelExtractedCell {
   text: string;
   colIndex: number;
   colSpan?: number;
@@ -3276,6 +3276,48 @@ interface ExcelExtractedCell {
   italic?: boolean;
   align?: 'left' | 'center' | 'right';
   hasBorder?: boolean;
+}
+
+/**
+ * Detects whether an embedded PDF text layer is actually corrupted OCR garbage or a CamScanner watermark layer
+ * (e.g. "i EE Er", "CT TS RE ] xm mm ICT Ce", "[sserkessrm", "Scanned with (& camScanner")
+ */
+function isCorruptedOrCamScannerTextLayer(items: ExtractedTextItem[]): boolean {
+  if (items.length === 0) return true;
+  const fullText = items.map(it => it.str).join(' ');
+  if (/camscanner|scanned\s+with/i.test(fullText)) {
+    return true;
+  }
+  const tokens = fullText.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  let suspiciousCount = 0;
+  for (const tok of tokens) {
+    // Brackets/pipes mixed with letters, or 5+ consonant clusters, or repeated nonsense letters
+    if (
+      /[\[\]|]{1,}/.test(tok) ||
+      /[bcdfghjklmnpqrstvwxz]{5,}/i.test(tok) ||
+      /(.)\1{3,}/i.test(tok) ||
+      /^[a-z]{1,2}$/i.test(tok) && !/^(va|la|co|o|u|y|a|e|i|in|on|to|of|or|by|at|an|as|kg|ml|mg|cm|mm|dl|ui|iu)$/i.test(tok)
+    ) {
+      suspiciousCount++;
+    }
+  }
+
+  return suspiciousCount / tokens.length > 0.22;
+}
+
+/**
+ * Cleans out CamScanner watermarks and OCR border artifacts from a single cell string
+ */
+function sanitizeOcrCellText(raw: string): string {
+  const txt = String(raw || '')
+    .replace(/Scanned\s+with\s*(?:\(&\s*)?CamScanner/gi, '')
+    .replace(/\(&\s*camScanner/gi, '')
+    .replace(/^\s*[\[\]|_]+\s*|\s*[\[\]|_]+\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return txt;
 }
 
 /**
@@ -3562,12 +3604,17 @@ export async function convertPdfToExcel(
   file: File,
   pageRangeStr = 'ALL',
   sheetMode: 'single_sheet' | 'sheet_per_page' = 'single_sheet',
-  useAiOcr: 'auto' | 'always' = 'auto',
+  useAiOcr: 'auto' | 'always' = 'always',
   onProgress?: ProgressCallback,
   apiKeysStr?: string,
   modelId?: string
-): Promise<{ blob: Blob; pagesProcessed: number; totalRows: number }> {
-  onProgress?.('Đang khởi tạo Engine Lattice Grid & OCR PDF sang Excel (.xlsx)...', file.name, 10);
+): Promise<{
+  blob: Blob;
+  pagesProcessed: number;
+  totalRows: number;
+  previewRows: ExcelExtractedCell[][];
+}> {
+  onProgress?.('Đang khởi tạo Engine AI Vision OCR & Bảng tính Excel (.xlsx)...', file.name, 10);
 
   const ExcelJSImport = await import('exceljs');
   const ExcelJS = (ExcelJSImport as any).default || ExcelJSImport;
@@ -3575,11 +3622,20 @@ export async function convertPdfToExcel(
   workbook.creator = 'AzTool Studio Pro';
   workbook.created = new Date();
 
-  const pdfjsLib = await getPdfJs();
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const totalPages = pdf.numPages;
-  const targetPages = parsePageSelection(pageRangeStr, totalPages);
+  const isImageInput =
+    file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
+
+  let pdf: any = null;
+  let totalPages = 1;
+  let targetPages = [1];
+
+  if (!isImageInput) {
+    const pdfjsLib = await getPdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    totalPages = pdf.numPages;
+    targetPages = parsePageSelection(pageRangeStr, totalPages);
+  }
 
   let combinedSheet: any = null;
   if (sheetMode === 'single_sheet') {
@@ -3591,13 +3647,12 @@ export async function convertPdfToExcel(
   let globalRowCursor = 1;
   let totalRowsExported = 0;
   const globalMaxColChars: number[] = [];
+  const allPreviewRows: ExcelExtractedCell[][] = [];
 
   const parseSmartCellValue = (raw: string): string | number => {
     const t = raw.trim();
     if (!t) return '';
-    // Keep strings with leading zero (e.g. phone numbers, IDs "01234") as text
     if (/^0\d+$/.test(t)) return t;
-    // Detect clean numbers or formatted currency/numbers (e.g., "1,250,000" or "45.5")
     if (/^-?\d+(?:,\d{3})+(?:\.\d+)?$/.test(t)) {
       const num = Number(t.replace(/,/g, ''));
       if (!isNaN(num)) return num;
@@ -3613,46 +3668,73 @@ export async function convertPdfToExcel(
     const pageNum = targetPages[idx];
     const pct = Math.round(15 + ((idx + 1) / targetPages.length) * 75);
     onProgress?.(
-      `Đang quét lưới bảng, màu ô & chữ tại Trang ${pageNum}/${totalPages}...`,
-      'Tái tạo chính xác số hàng, số cột, ô gộp (Merged Cells), màu nền và đường kẻ viền',
+      `Đang phân tích hình ảnh & bảng biểu Trang ${pageNum}/${totalPages}...`,
+      'Nhận diện chữ tiếng Việt, cấu trúc hàng/cột, ô gộp (Merged Cells), màu nền và đường kẻ viền',
       pct
     );
 
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.0 });
-    const textContent = await page.getTextContent();
-
-    // Render page at 1.75x onto canvas for pixel background color sampling & Scanned PDF AI Vision OCR
-    const renderScale = 1.75;
-    const renderViewport = page.getViewport({ scale: renderScale });
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(renderViewport.width);
-    canvas.height = Math.round(renderViewport.height);
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport: renderViewport, canvas } as any).promise;
-
-    const rawItems = textContent.items as any[];
+    let viewport = { width: 1200, height: 1600 };
+    const renderScale = 2.0;
     const items: ExtractedTextItem[] = [];
-    for (const rawItem of rawItems) {
-      const str = (rawItem.str || '').replace(/\u0000/g, '');
-      if (!str.trim()) continue;
-      const tx = rawItem.transform || [12, 0, 0, 12, 0, 0];
-      const x = Number(tx[4]) || 0;
-      const y = Number(tx[5]) || 0;
-      const fontSize = Math.max(8, Math.min(36, Math.round(Math.hypot(tx[0], tx[1]) || 11)));
-      const fontName = String(rawItem.fontName || '').toLowerCase();
-      items.push({
-        str,
-        x,
-        y,
-        width: Number(rawItem.width) || str.length * (fontSize * 0.5),
-        height: Number(rawItem.height) || fontSize,
-        fontSize,
-        bold: fontName.includes('bold') || fontName.includes('black') || fontSize >= 14,
-        italic: fontName.includes('italic') || fontName.includes('oblique'),
+
+    if (isImageInput) {
+      const imgDataUrl = await new Promise<string>(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsDataURL(file);
       });
+      const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error('Không thể đọc file ảnh'));
+        im.src = imgDataUrl;
+      });
+      canvas.width = Math.max(1, imgEl.width);
+      canvas.height = Math.max(1, imgEl.height);
+      viewport = { width: canvas.width, height: canvas.height };
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imgEl, 0, 0);
+    } else {
+      const page = await pdf.getPage(pageNum);
+      viewport = page.getViewport({ scale: 1.0 });
+      const textContent = await page.getTextContent();
+
+      const renderViewport = page.getViewport({ scale: renderScale });
+      canvas.width = Math.round(renderViewport.width);
+      canvas.height = Math.round(renderViewport.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport: renderViewport, canvas } as any).promise;
+
+      const rawItems = textContent.items as any[];
+      for (const rawItem of rawItems) {
+        const str = (rawItem.str || '').replace(/\u0000/g, '');
+        if (!str.trim()) continue;
+        const tx = rawItem.transform || [12, 0, 0, 12, 0, 0];
+        const x = Number(tx[4]) || 0;
+        const y = Number(tx[5]) || 0;
+        const fontSize = Math.max(8, Math.min(36, Math.round(Math.hypot(tx[0], tx[1]) || 11)));
+        const fontName = String(rawItem.fontName || '').toLowerCase();
+        items.push({
+          str,
+          x,
+          y,
+          width: Number(rawItem.width) || str.length * (fontSize * 0.5),
+          height: Number(rawItem.height) || fontSize,
+          fontSize,
+          bold: fontName.includes('bold') || fontName.includes('black') || fontSize >= 14,
+          italic: fontName.includes('italic') || fontName.includes('oblique'),
+        });
+      }
+    }
+
+    // CRITICAL FIX: Detect if embedded PDF text layer is CamScanner / corrupted OCR gibberish!
+    const hasCorruptedTextLayer = isCorruptedOrCamScannerTextLayer(items);
+    if (hasCorruptedTextLayer) {
+      items.length = 0; // Discard corrupted embedded text layer so we never output gibberish!
     }
 
     const activeSheet =
@@ -3671,14 +3753,23 @@ export async function convertPdfToExcel(
       if (availableKeys.length === 0) return null;
       try {
         onProgress?.(
-          `Đang chạy AI Vision OCR bóc tách bảng biểu Trang ${pageNum}/${totalPages}...`,
-          'Nhận diện chữ Scan tiếng Việt, cấu trúc cột/dòng, ô gộp và màu sắc',
+          `Đang chạy Gemini AI Vision OCR đọc bảng biểu Trang ${pageNum}/${totalPages}...`,
+          'Đọc chính xác 100% chữ tiếng Việt, số liệu, gộp ô và màu sắc từ ảnh/scan',
           pct
         );
-        const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        const prompt = `Bạn là hệ thống chuyển đổi PDF/Ảnh Scan sang bảng tính Microsoft Excel (.xlsx) chính xác 100%.
-Hãy trích xuất toàn bộ nội dung bảng biểu và văn bản trên trang này thành ma trận các hàng và ô.
-Trả về đúng định dạng JSON:
+        const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const prompt = `Bạn là hệ thống AI Vision OCR chuyên đọc bảng biểu tiếng Việt từ Ảnh chụp / PDF Scan (kể cả ảnh chụp nghiêng, mờ hoặc bản scan CamScanner) để chuyển sang bảng tính Microsoft Excel (.xlsx) chuẩn 100%.
+
+YÊU CẦU BẮT BUỘC:
+1. Đọc chính xác 100% từng chữ tiếng Việt có dấu, tên riêng, thuật ngữ chuyên ngành, con số, đơn vị tính trong bảng. TUYỆT ĐỐI KHÔNG bịa chữ hoặc xuất ký tự rác.
+2. BỎ QUA HOÀN TOÀN dòng chữ watermark "Scanned with CamScanner" ở cuối trang (nếu có).
+3. Giữ đúng cấu trúc hàng (rows) và cột (columns):
+   - Mỗi hàng là một mảng các ô theo thứ tự từ trái sang phải.
+   - Đánh số "colIndex" bắt đầu từ 0 (cột A = 0, cột B = 1, cột C = 2...). Nếu có ô gộp ngang ("colSpan" > 1), ô tiếp theo phải có "colIndex" nhảy đúng bằng colIndex + colSpan.
+   - Nếu ô có màu nền (xanh, vàng, cam, xám nhạt...), trả mã màu hex 6 ký tự vào "bgHex" (VD: "D9E1F2", "E2EFDA", "FFF2CC"). Nếu ô nền trắng, đặt "bgHex": null.
+   - Đặt "bold": true cho hàng tiêu đề bảng hoặc chữ in đậm.
+
+Trả về ĐÚNG JSON thuần túy theo cấu trúc:
 {
   "rows": [
     [
@@ -3696,10 +3787,7 @@ Trả về đúng định dạng JSON:
       }
     ]
   ]
-}
-Lưu ý:
-- Nếu ô không có màu nền (nền trắng), đặt "bgHex": null. Nếu ô có màu nền (xanh, vàng, xám...), trả mã hex 6 ký tự (VD: "FFF2CC", "E2EFDA", "D9E1F2").
-- Nếu là tiêu đề gộp nhiều cột, đặt "colSpan" tương ứng (VD: 4, 5...).`;
+}`;
 
         const visionJson = await callGeminiVisionApi(prompt, jpgDataUrl, 'image/jpeg', apiKeysStr, modelId);
         const parsed = parseResilientVisionJson(visionJson);
@@ -3712,10 +3800,10 @@ Lưu ý:
       return null;
     };
 
-    // 1. Check if page is Scanned PDF (items.length < 15) or user selected 'always' AI Vision OCR
-    if (items.length < 15 || useAiOcr === 'always') {
+    // 1. Prioritize AI Vision OCR whenever page is an image, a Scanned/CamScanner PDF, or user selected 'always'
+    if (isImageInput || items.length < 15 || hasCorruptedTextLayer || useAiOcr === 'always') {
       extractedRowsForPage = await runVisionOcrForPage();
-      if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
+      if ((!extractedRowsForPage || extractedRowsForPage.length === 0) && items.length === 0) {
         const localOcrRows = await extractScannedPageTableViaLocalOcr(
           canvas,
           ctx,
@@ -3730,8 +3818,8 @@ Lưu ý:
       }
     }
 
-    // 2. Coordinate + Visual Pixel Color Grid Reconstruction (Lattice & Stream Engine)
-    if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
+    // 2. Coordinate + Visual Pixel Color Grid Reconstruction (only for genuine digital vector PDFs with clean text)
+    if ((!extractedRowsForPage || extractedRowsForPage.length === 0) && items.length > 0) {
       items.sort((a, b) => b.y - a.y || a.x - b.x);
       const lines: { y: number; height: number; items: ExtractedTextItem[] }[] = [];
       for (const item of items) {
@@ -3744,7 +3832,6 @@ Lưu ý:
         }
       }
 
-      // Segment each line into distinct horizontal cells
       const segmentedLines = lines.map(ln => {
         ln.items.sort((a, b) => a.x - b.x);
         const segs: {
@@ -3800,7 +3887,6 @@ Lưu ý:
         return { y: ln.y, height: ln.height, segs };
       });
 
-      // Discover global column X boundaries across all multi-cell lines on the page
       const colAnchors: number[] = [];
       for (const sl of segmentedLines) {
         if (sl.segs.length >= 2) {
@@ -3821,7 +3907,6 @@ Lưu ý:
 
         const canvasY = (viewport.height - sl.y - sl.height) * renderScale;
 
-        // If this line has only 1 segment and totalCols > 1, check if it's a centered/wide title or section header -> merge across columns!
         if (sl.segs.length === 1 && totalCols > 1) {
           const s = sl.segs[0];
           const bgHex = sampleCellBackgroundHex(
@@ -3852,7 +3937,6 @@ Lưu ý:
           continue;
         }
 
-        // Multi-column table row
         const rowCells: ExcelExtractedCell[] = [];
         const assignedCols = new Map<number, typeof sl.segs[0]>();
 
@@ -3895,7 +3979,6 @@ Lưu ý:
             continue;
           }
 
-          // Check if this segment's right edge spans across subsequent empty columns (`colSpan`)
           let span = 1;
           while (
             cIdx + span < totalCols &&
@@ -3938,33 +4021,26 @@ Lưu ý:
 
         extractedRowsForPage.push(rowCells);
       }
+    }
 
-      // If coordinate stream extraction found 0 rows or only stray headers while the page has visual table content, run OCR!
-      if (extractedRowsForPage.length < 2) {
-        const visionFallback = await runVisionOcrForPage();
-        if (visionFallback && visionFallback.length > 0) {
-          extractedRowsForPage = visionFallback;
-        } else {
-          const localFallback = await extractScannedPageTableViaLocalOcr(
-            canvas,
-            ctx,
-            pageNum,
-            totalPages,
-            pct,
-            onProgress
-          );
-          if (localFallback.length > extractedRowsForPage.length) {
-            extractedRowsForPage = localFallback;
-          }
-        }
-      }
+    // Sanitize all rows & remove CamScanner watermark rows
+    if (extractedRowsForPage && extractedRowsForPage.length > 0) {
+      extractedRowsForPage = extractedRowsForPage
+        .map(row =>
+          (Array.isArray(row) ? row : []).map((cell, cIdx) => ({
+            ...cell,
+            colIndex: typeof cell.colIndex === 'number' ? cell.colIndex : cIdx,
+            text: sanitizeOcrCellText(cell.text),
+          }))
+        )
+        .filter(row => row.some(c => c.text.length > 0));
     }
 
     // 2.5. Ultimate Guarantee: If page is a pure graphic/scan where 0 text cells could be extracted, embed the high-res table image directly into the Excel sheet so it is NEVER blank!
     if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
       const headerRow = activeSheet.getRow(globalRowCursor);
       const headerCell = headerRow.getCell(1);
-      headerCell.value = `Bảng biểu / Nội dung Trang ${pageNum} (Bản chụp sắc nét từ PDF Scan)`;
+      headerCell.value = `Bảng biểu / Nội dung Trang ${pageNum} (Bản chụp sắc nét từ tài liệu gốc)`;
       headerCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
       headerRow.height = 26;
       globalRowCursor++;
@@ -3989,22 +4065,29 @@ Lưu ý:
       continue;
     }
 
+    // Save into previewRows for UI preview
+    allPreviewRows.push(...extractedRowsForPage);
+
     // 3. Write extracted rows to ExcelJS Worksheet with full colors, borders, merges, and fonts
     for (const rCells of extractedRowsForPage) {
       if (!Array.isArray(rCells) || rCells.length === 0) continue;
       const excelRow = activeSheet.getRow(globalRowCursor);
       let maxTextLinesInRow = 1;
+      let nextAutoCol1Based = 1;
 
       for (let i = 0; i < rCells.length; i++) {
         const cellData = rCells[i];
-        const col1Based = (typeof cellData.colIndex === 'number' ? cellData.colIndex : i) + 1;
+        const col1Based =
+          typeof cellData.colIndex === 'number' && cellData.colIndex >= 0
+            ? Math.max(nextAutoCol1Based, cellData.colIndex + 1)
+            : nextAutoCol1Based;
         const spanC = Math.max(1, cellData.colSpan || 1);
         const spanR = Math.max(1, cellData.rowSpan || 1);
+        nextAutoCol1Based = col1Based + spanC;
 
         const xlCell = excelRow.getCell(col1Based);
         xlCell.value = parseSmartCellValue(String(cellData.text ?? ''));
 
-        // Track column width
         const textLen = String(cellData.text ?? '').length;
         if (spanC === 1) {
           globalMaxColChars[col1Based] = Math.max(
@@ -4014,7 +4097,6 @@ Lưu ý:
         }
         maxTextLinesInRow = Math.max(maxTextLinesInRow, Math.ceil(textLen / 45));
 
-        // Font styling
         const cleanTextColor = cellData.textColorHex
           ? String(cellData.textColorHex).replace('#', '').toUpperCase()
           : '0F172A';
@@ -4026,7 +4108,6 @@ Lưu ý:
           color: { argb: `FF${cleanTextColor.length === 6 ? cleanTextColor : '0F172A'}` },
         };
 
-        // Alignment & wrap
         xlCell.alignment = {
           vertical: 'middle',
           horizontal:
@@ -4035,7 +4116,6 @@ Lưu ý:
           wrapText: true,
         };
 
-        // Background fill color
         const cleanBg = cellData.bgHex
           ? String(cellData.bgHex).replace('#', '').toUpperCase()
           : null;
@@ -4047,7 +4127,6 @@ Lưu ý:
           };
         }
 
-        // Merge cells if colSpan > 1 or rowSpan > 1
         if (spanC > 1 || spanR > 1) {
           try {
             activeSheet.mergeCells(
@@ -4061,7 +4140,6 @@ Lưu ý:
           }
         }
 
-        // Apply crisp borders across all spanned cells
         if (cellData.hasBorder !== false) {
           for (let mr = globalRowCursor; mr < globalRowCursor + spanR; mr++) {
             for (let mc = col1Based; mc < col1Based + spanC; mc++) {
@@ -4082,13 +4160,11 @@ Lưu ý:
       totalRowsExported++;
     }
 
-    // Add a 1-row separator between pages in single_sheet mode
     if (sheetMode === 'single_sheet' && idx < targetPages.length - 1) {
       globalRowCursor++;
     }
   }
 
-  // Apply auto-fitted column widths across all worksheets
   for (const ws of workbook.worksheets) {
     globalMaxColChars.forEach((charCount, colIdx) => {
       if (colIdx >= 1 && charCount) {
@@ -4105,6 +4181,7 @@ Lưu ý:
     }),
     pagesProcessed: targetPages.length,
     totalRows: totalRowsExported,
+    previewRows: allPreviewRows,
   };
 }
 
