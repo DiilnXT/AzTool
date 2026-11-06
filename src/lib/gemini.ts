@@ -370,3 +370,77 @@ Lỗi cần sửa: ${errorDetail}`;
     throw new Error('Không thể tự động sinh phiên bản sửa lỗi. Vui lòng thử lại.');
   }
 }
+
+/**
+ * Multimodal Vision caller for Scanned PDF OCR & Table Extraction
+ */
+export async function callGeminiVisionApi(
+  prompt: string,
+  base64Image: string,
+  mimeType: string = 'image/jpeg',
+  apiKeysStr?: string,
+  modelId?: string
+): Promise<string> {
+  const keys = getAvailableKeys(apiKeysStr);
+  if (keys.length === 0) {
+    throw new Error('Chưa có API Key Gemini cho OCR Vision');
+  }
+
+  const cleanBase64 = base64Image.includes(',')
+    ? base64Image.split(',')[1]
+    : base64Image;
+
+  const requestedModel = modelId && modelId.trim() ? modelId.trim() : 'gemini-2.0-flash';
+  const modelsToTry = [requestedModel, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+  const uniqueModels = Array.from(new Set(modelsToTry));
+  const shuffledKeys = [...keys].sort(() => Math.random() - 0.5);
+
+  let lastError: any = null;
+  for (const activeModel of uniqueModels) {
+    for (const key of shuffledKeys) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`;
+        const body = {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: cleanBase64,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json',
+          },
+        };
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          if (res.status === 429) continue;
+          break;
+        }
+
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  throw lastError || new Error('Không thể gọi Gemini Vision OCR');
+}

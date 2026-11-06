@@ -15,9 +15,19 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 
+export type TopWorkspaceTab =
+  | 'exam-tools'
+  | 'thesis-auditor'
+  | 'pdf-studio'
+  | 'admin'
+  | 'guide'
+  | 'standardize'
+  | 'mix'
+  | 'ai-audit';
+
 interface NavbarProps {
-  activeTab: 'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide';
-  setActiveTab: (tab: 'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide') => void;
+  activeTab: TopWorkspaceTab;
+  setActiveTab: (tab: TopWorkspaceTab) => void;
   openSettings: () => void;
   onOpenLanding?: () => void;
   questionsCount?: number;

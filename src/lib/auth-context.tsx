@@ -31,6 +31,7 @@ export const defaultUserPermissions: TabPermissions = {
   canStandardize: false,
   canMix: false,
   canPdfStudio: false,
+  canThesisAudit: false,
 };
 
 export const superAdminPermissions: TabPermissions = {
@@ -38,6 +39,7 @@ export const superAdminPermissions: TabPermissions = {
   canStandardize: true,
   canMix: true,
   canPdfStudio: true,
+  canThesisAudit: true,
 };
 
 interface AuthContextType {
@@ -52,7 +54,9 @@ interface AuthContextType {
   isAdmin: boolean;
   isPro: boolean;
   permissionsMap: Record<string, TabPermissions>;
-  hasTabAccess: (tab: 'ai-audit' | 'standardize' | 'mix' | 'pdf-studio') => boolean;
+  hasTabAccess: (
+    tab: 'ai-audit' | 'standardize' | 'mix' | 'exam-tools' | 'thesis-auditor' | 'pdf-studio'
+  ) => boolean;
   updateUserPermissions: (
     email: string,
     perms: TabPermissions,
@@ -338,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const hasTabAccess = (
-    tab: 'ai-audit' | 'standardize' | 'mix' | 'pdf-studio'
+    tab: 'ai-audit' | 'standardize' | 'mix' | 'exam-tools' | 'thesis-auditor' | 'pdf-studio'
   ): boolean => {
     if (!user) return false;
     if (isSuperAdmin) return true;
@@ -347,6 +351,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (tab === 'ai-audit') return Boolean(perms.canAudit);
     if (tab === 'standardize') return Boolean(perms.canStandardize);
     if (tab === 'mix') return Boolean(perms.canMix);
+    if (tab === 'exam-tools') {
+      return Boolean(perms.canAudit || perms.canStandardize || perms.canMix);
+    }
+    if (tab === 'thesis-auditor') {
+      return perms.canThesisAudit !== undefined
+        ? Boolean(perms.canThesisAudit)
+        : Boolean(perms.canAudit || perms.canStandardize);
+    }
     if (tab === 'pdf-studio') {
       return perms.canPdfStudio !== undefined
         ? Boolean(perms.canPdfStudio)
@@ -374,6 +386,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               perms.canPdfStudio !== undefined
                 ? Boolean(perms.canPdfStudio)
                 : Boolean(perms.canStandardize),
+            canThesisAudit:
+              perms.canThesisAudit !== undefined
+                ? Boolean(perms.canThesisAudit)
+                : Boolean(perms.canAudit || perms.canStandardize),
           };
 
     // 1. Update permissionsMap immediately
@@ -456,6 +472,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canStandardize: true,
         canMix: true,
         canPdfStudio: true,
+        canThesisAudit: true,
       },
       displayName
     );
@@ -467,6 +484,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canStandardize: false,
       canMix: false,
       canPdfStudio: false,
+      canThesisAudit: false,
     });
   };
 

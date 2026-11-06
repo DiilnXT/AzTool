@@ -3,11 +3,12 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ToastProvider } from '@/components/ToastProvider';
-import { Navbar } from '@/components/Navbar';
+import { Navbar, TopWorkspaceTab } from '@/components/Navbar';
 import { LandingPage } from '@/components/LandingPage';
 import { ExamStandardizer } from '@/components/ExamStandardizer';
 import { ExamMixer } from '@/components/ExamMixer';
 import { AiAuditor } from '@/components/AiAuditor';
+import { ThesisDocxAuditor } from '@/components/ThesisDocxAuditor';
 import { PdfOfficeStudio } from '@/components/PdfOfficeStudio';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { UserGuide } from '@/components/UserGuide';
@@ -25,8 +26,9 @@ import {
   KeyRound,
   BookOpen,
   Mail,
-  CheckCircle2,
   ShieldAlert,
+  GraduationCap,
+  Layers,
 } from 'lucide-react';
 
 function TabLockedView({
@@ -114,9 +116,8 @@ function TabLockedView({
 
 function MainApp() {
   const { user, systemConfig, isLoaded, isSuperAdmin, hasTabAccess } = useAuth();
-  const [activeTab, setActiveTab] = useState<
-    'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide'
-  >('ai-audit');
+  const [activeTab, setActiveTabState] = useState<TopWorkspaceTab>('exam-tools');
+  const [examSubTab, setExamSubTab] = useState<'ai-audit' | 'standardize' | 'mix'>('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
 
@@ -125,6 +126,15 @@ function MainApp() {
   const [questions, setQuestions] = useState<Question[]>([]);
 
   const answeredCount = questions.filter(q => !!q.correctAnswer).length;
+
+  const setActiveTab = (tab: TopWorkspaceTab) => {
+    if (tab === 'ai-audit' || tab === 'standardize' || tab === 'mix') {
+      setActiveTabState('exam-tools');
+      setExamSubTab(tab);
+    } else {
+      setActiveTabState(tab);
+    }
+  };
 
   // Show LandingPage when user is not logged in OR when user clicks "Trang Giới Thiệu"
   if (isLoaded && (!user || showLandingPage)) {
@@ -140,47 +150,38 @@ function MainApp() {
   const canUseAudit = hasTabAccess('ai-audit');
   const canUseStandardize = hasTabAccess('standardize');
   const canUseMix = hasTabAccess('mix');
+  const canUseExamTools = canUseAudit || canUseStandardize || canUseMix;
+  const canUseThesisAuditor = hasTabAccess('thesis-auditor');
   const canUsePdfStudio = hasTabAccess('pdf-studio');
 
   const navCards = [
     {
-      id: 'ai-audit' as const,
-      step: 'PHÂN HỆ 01',
-      title: 'AI Soát Lỗi Đề Thi',
-      desc: 'Tải đề Word & Quét lỗi bằng AI',
-      icon: Sparkles,
-      gradient: 'from-[#00c4cc] to-[#7d2ae8]',
+      id: 'exam-tools' as const,
+      step: 'TỔ HỢP SOẠN ĐỀ (1•2•3)',
+      title: 'Tools Soạn Đề',
+      desc: 'AI Soát Lỗi • Chuẩn Hóa • Trộn Đề 25%',
+      icon: Layers,
+      gradient: 'from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4]',
       activeRing: 'ring-[#7d2ae8] border-[#7d2ae8] bg-purple-50/60 dark:bg-purple-950/30',
-      unlocked: canUseAudit,
+      unlocked: canUseExamTools,
       requirePerm: true,
     },
     {
-      id: 'standardize' as const,
-      step: 'PHÂN HỆ 02',
-      title: 'Chuẩn Hóa 1 Chạm',
-      desc: 'Xuất khuôn mẫu & Đánh dấu X đỏ',
-      icon: FileCheck,
-      gradient: 'from-emerald-500 to-teal-500',
-      activeRing: 'ring-emerald-500 border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30',
-      unlocked: canUseStandardize,
-      requirePerm: true,
-    },
-    {
-      id: 'mix' as const,
-      step: 'PHÂN HỆ 03',
-      title: 'Trộn Mã Đề 25%',
-      desc: 'Hoán vị câu & Cân bằng A-B-C-D',
-      icon: Shuffle,
-      gradient: 'from-[#ff66c4] to-[#7d2ae8]',
-      activeRing: 'ring-purple-500 border-purple-500 bg-purple-50/60 dark:bg-purple-950/30',
-      unlocked: canUseMix,
+      id: 'thesis-auditor' as const,
+      step: 'ĐỀ ÁN & GIÁO TRÌNH',
+      title: 'Rà Soát Đề Án Word',
+      desc: 'Từ viết tắt, Danh mục Bảng & Hình ảnh',
+      icon: GraduationCap,
+      gradient: 'from-indigo-600 via-purple-600 to-pink-600',
+      activeRing: 'ring-indigo-500 border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/30',
+      unlocked: canUseThesisAuditor,
       requirePerm: true,
     },
     {
       id: 'pdf-studio' as const,
-      step: 'PHÂN HỆ 04',
+      step: '20 CÔNG CỤ PRO',
       title: 'PDF & Office Studio',
-      desc: 'Đổi PDF/Word/Excel/PPT & Sửa PDF',
+      desc: 'PDF/Scan ⇄ Word/Excel/PPT & Sửa PDF',
       icon: FileSpreadsheet,
       gradient: 'from-rose-500 via-orange-500 to-amber-500',
       activeRing: 'ring-rose-500 border-rose-500 bg-rose-50/60 dark:bg-rose-950/30',
@@ -193,10 +194,40 @@ function MainApp() {
       title: 'Quy Chuẩn Soạn Đề',
       desc: 'Cú pháp chuẩn & Mẹo định dạng',
       icon: BookOpen,
-      gradient: 'from-blue-500 to-indigo-600',
+      gradient: 'from-blue-500 to-cyan-600',
       activeRing: 'ring-blue-500 border-blue-500 bg-blue-50/60 dark:bg-blue-950/30',
       unlocked: true,
       requirePerm: false,
+    },
+  ];
+
+  const examSubTabs = [
+    {
+      id: 'ai-audit' as const,
+      step: 'BƯỚC 01',
+      title: '1. AI Soát Lỗi Đề Thi',
+      desc: 'Tải đề Word & Quét lỗi bằng AI',
+      icon: Sparkles,
+      unlocked: canUseAudit,
+      gradient: 'from-[#00c4cc] to-[#7d2ae8]',
+    },
+    {
+      id: 'standardize' as const,
+      step: 'BƯỚC 02',
+      title: '2. Chuẩn Hóa 1 Chạm',
+      desc: 'Xuất khuôn mẫu & Đánh dấu X đỏ',
+      icon: FileCheck,
+      unlocked: canUseStandardize,
+      gradient: 'from-emerald-500 to-teal-500',
+    },
+    {
+      id: 'mix' as const,
+      step: 'BƯỚC 03',
+      title: '3. Trộn Mã Đề 25%',
+      desc: 'Hoán vị câu & Cân bằng A-B-C-D',
+      icon: Shuffle,
+      unlocked: canUseMix,
+      gradient: 'from-[#ff66c4] to-[#7d2ae8]',
     },
   ];
 
@@ -224,8 +255,8 @@ function MainApp() {
       <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs">
         <div className="max-w-7xl mx-auto">
           <div
-            className={`grid grid-cols-2 sm:grid-cols-3 ${
-              isSuperAdmin ? 'xl:grid-cols-6' : 'xl:grid-cols-5'
+            className={`grid grid-cols-2 sm:grid-cols-2 ${
+              isSuperAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'
             } gap-2.5 sm:gap-3`}
           >
             {navCards.map(card => {
@@ -288,7 +319,7 @@ function MainApp() {
             {isSuperAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 lg:col-span-1 ${
+                className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 xl:col-span-1 ${
                   activeTab === 'admin'
                     ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
                     : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
@@ -324,67 +355,137 @@ function MainApp() {
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20">
         <div key={activeTab} className="tab-enter">
-          {activeTab === 'ai-audit' &&
-            (canUseAudit ? (
-              <AiAuditor
-                examMetadata={examMetadata}
-                setExamMetadata={setExamMetadata}
-                questions={questions}
-                setQuestions={setQuestions}
-                openSettings={() => setIsSettingsOpen(true)}
-                onGoToStandardize={() => setActiveTab('standardize')}
-                onGoToMixer={() => setActiveTab('mix')}
-              />
+          {/* TAB 1: TOOLS SOẠN ĐỀ (GỘP PHÂN HỆ 1, 2, 3) */}
+          {activeTab === 'exam-tools' && (
+            <div className="space-y-6">
+              {/* Sub-Tab Selector Bar for Phân Hệ 1, 2, 3 */}
+              <div className="canva-card p-3 sm:p-4 rounded-3xl border border-purple-200/80 dark:border-purple-900/40 bg-white dark:bg-[#151823] shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {examSubTabs.map(sub => {
+                    const SubIcon = sub.icon;
+                    const isSubActive = examSubTab === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        onClick={() => setExamSubTab(sub.id)}
+                        className={`flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all canva-tap ${
+                          isSubActive
+                            ? 'border-[#7d2ae8] bg-purple-50/80 dark:bg-purple-950/40 shadow-sm ring-2 ring-[#7d2ae8]/20'
+                            : 'border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 hover:border-purple-300'
+                        }`}
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-xl bg-gradient-to-br ${sub.gradient} text-white flex items-center justify-center shrink-0 shadow-xs`}
+                        >
+                          <SubIcon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] font-black text-[#7d2ae8] dark:text-purple-300">
+                              {sub.step}
+                            </span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                sub.unlocked
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              }`}
+                            >
+                              {sub.unlocked ? 'Đã mở' : 'Khóa'}
+                            </span>
+                          </div>
+                          <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate">
+                            {sub.title}
+                          </div>
+                          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                            {sub.desc}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Active Exam Sub-Tool Content */}
+              {examSubTab === 'ai-audit' &&
+                (canUseAudit ? (
+                  <AiAuditor
+                    examMetadata={examMetadata}
+                    setExamMetadata={setExamMetadata}
+                    questions={questions}
+                    setQuestions={setQuestions}
+                    openSettings={() => setIsSettingsOpen(true)}
+                    onGoToStandardize={() => setExamSubTab('standardize')}
+                    onGoToMixer={() => setExamSubTab('mix')}
+                  />
+                ) : (
+                  <TabLockedView
+                    tabTitle="Tools Soạn Đề • Bước 1: AI Kiểm Định & Soát Lỗi Đề Thi"
+                    onGoToGuide={() => setActiveTab('guide')}
+                  />
+                ))}
+
+              {examSubTab === 'standardize' &&
+                (canUseStandardize ? (
+                  <ExamStandardizer
+                    examMetadata={examMetadata}
+                    setExamMetadata={setExamMetadata}
+                    questions={questions}
+                    setQuestions={setQuestions}
+                    onGoToMixer={() => setExamSubTab('mix')}
+                    onGoToAiAudit={() => setExamSubTab('ai-audit')}
+                  />
+                ) : (
+                  <TabLockedView
+                    tabTitle="Tools Soạn Đề • Bước 2: Chuẩn Hóa Đề Thi & Bảng Đáp Án 1 Chạm"
+                    onGoToGuide={() => setActiveTab('guide')}
+                  />
+                ))}
+
+              {examSubTab === 'mix' &&
+                (canUseMix ? (
+                  <ExamMixer
+                    examMetadata={examMetadata}
+                    questions={questions}
+                    onGoToAiAudit={() => setExamSubTab('ai-audit')}
+                  />
+                ) : (
+                  <TabLockedView
+                    tabTitle="Tools Soạn Đề • Bước 3: Trộn Mã Đề 25% Cân Bằng Đáp Án"
+                    onGoToGuide={() => setActiveTab('guide')}
+                  />
+                ))}
+            </div>
+          )}
+
+          {/* TAB 2: KIỂM DUYỆT ĐỀ ÁN & GIÁO TRÌNH WORD */}
+          {activeTab === 'thesis-auditor' &&
+            (canUseThesisAuditor ? (
+              <ThesisDocxAuditor />
             ) : (
               <TabLockedView
-                tabTitle="Phân Hệ 01: AI Kiểm Định & Soát Lỗi Đề Thi"
+                tabTitle="Kiểm Duyệt Đề Án & Giáo Trình (Từ viết tắt, Danh mục Bảng & Hình ảnh)"
                 onGoToGuide={() => setActiveTab('guide')}
               />
             ))}
 
-          {activeTab === 'standardize' &&
-            (canUseStandardize ? (
-              <ExamStandardizer
-                examMetadata={examMetadata}
-                setExamMetadata={setExamMetadata}
-                questions={questions}
-                setQuestions={setQuestions}
-                onGoToMixer={() => setActiveTab('mix')}
-                onGoToAiAudit={() => setActiveTab('ai-audit')}
-              />
-            ) : (
-              <TabLockedView
-                tabTitle="Phân Hệ 02: Chuẩn Hóa Đề Thi & Bảng Đáp Án 1 Chạm"
-                onGoToGuide={() => setActiveTab('guide')}
-              />
-            ))}
-
-          {activeTab === 'mix' &&
-            (canUseMix ? (
-              <ExamMixer
-                examMetadata={examMetadata}
-                questions={questions}
-                onGoToAiAudit={() => setActiveTab('ai-audit')}
-              />
-            ) : (
-              <TabLockedView
-                tabTitle="Phân Hệ 03: Trộn Mã Đề 25% Cân Bằng Đáp Án"
-                onGoToGuide={() => setActiveTab('guide')}
-              />
-            ))}
-
+          {/* TAB 3: PDF & OFFICE STUDIO (20 CÔNG CỤ PRO) */}
           {activeTab === 'pdf-studio' &&
             (canUsePdfStudio ? (
               <PdfOfficeStudio />
             ) : (
               <TabLockedView
-                tabTitle="Phân Hệ 04: PDF & Office Studio (14 Công Cụ Chuyển Đổi & Chỉnh Sửa PDF)"
+                tabTitle="PDF & Office Studio (20 Công Cụ Chuyển Đổi PDF/Word/Excel & Xử Lý Đồ Họa AI)"
                 onGoToGuide={() => setActiveTab('guide')}
               />
             ))}
 
+          {/* TAB 4: TRUNG TÂM QUẢN TRỊ ADMIN */}
           {activeTab === 'admin' && isSuperAdmin && <AdminDashboard />}
 
+          {/* TAB 5: HƯỚNG DẪN & QUY CHUẨN */}
           {activeTab === 'guide' && <UserGuide />}
         </div>
       </main>

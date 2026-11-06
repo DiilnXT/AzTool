@@ -237,6 +237,7 @@ export function AdminDashboard() {
       canStandardize: '2. Chuẩn Hóa 1 Chạm',
       canMix: '3. Trộn Mã Đề 25%',
       canPdfStudio: '4. PDF & Office Studio',
+      canThesisAudit: '5. Rà Soát Đề Án Word',
     };
     toast.info(
       `${updated[key] ? 'Đã BẬT quyền' : 'Đã KHÓA quyền'}`,
@@ -247,20 +248,32 @@ export function AdminDashboard() {
   const handleGrantAll = async (email: string, displayName?: string) => {
     await updateUserPermissions(
       email,
-      { canAudit: true, canStandardize: true, canMix: true, canPdfStudio: true },
+      {
+        canAudit: true,
+        canStandardize: true,
+        canMix: true,
+        canPdfStudio: true,
+        canThesisAudit: true,
+      },
       displayName
     );
-    toast.success('Đã mở khóa cả 4 Tab!', `Tài khoản ${email} đã được cấp toàn quyền.`);
+    toast.success('Đã mở khóa toàn bộ tính năng!', `Tài khoản ${email} đã được cấp toàn quyền.`);
     confetti({ particleCount: 30, spread: 45 });
   };
 
   const handleRevokeAll = async (email: string, displayName?: string) => {
     await updateUserPermissions(
       email,
-      { canAudit: false, canStandardize: false, canMix: false, canPdfStudio: false },
+      {
+        canAudit: false,
+        canStandardize: false,
+        canMix: false,
+        canPdfStudio: false,
+        canThesisAudit: false,
+      },
       displayName
     );
-    toast.warning('Đã thu hồi quyền cả 4 Tab!', `Tài khoản ${email} hiện đang bị khóa.`);
+    toast.warning('Đã thu hồi toàn bộ quyền!', `Tài khoản ${email} hiện đang bị khóa.`);
   };
 
   const handleAddNewTeacherWithPerms = async (e: React.FormEvent) => {
@@ -274,6 +287,7 @@ export function AdminDashboard() {
       canStandardize: addPermStandardize,
       canMix: addPermMix,
       canPdfStudio: addPermPdfStudio,
+      canThesisAudit: addPermAudit || addPermStandardize,
     };
 
     await updateUserPermissions(email, newPerms, name);
@@ -808,6 +822,12 @@ export function AdminDashboard() {
                         <span>4. PDF &amp; Office</span>
                       </div>
                     </th>
+                    <th className="py-3.5 px-2.5 text-center">
+                      <div className="inline-flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>5. Đề Án Word</span>
+                      </div>
+                    </th>
                     <th className="py-3.5 px-4 text-right">Thao Tác Nhanh</th>
                   </tr>
                 </thead>
@@ -816,13 +836,20 @@ export function AdminDashboard() {
                     const normEmail = u.email.toLowerCase();
                     const isSuper = normEmail === SUPER_ADMIN_EMAIL.toLowerCase();
                     const perms: TabPermissions = isSuper
-                      ? { canAudit: true, canStandardize: true, canMix: true, canPdfStudio: true }
+                      ? {
+                          canAudit: true,
+                          canStandardize: true,
+                          canMix: true,
+                          canPdfStudio: true,
+                          canThesisAudit: true,
+                        }
                       : permissionsMap[normEmail] ||
                         u.permissions || {
                           canAudit: false,
                           canStandardize: false,
                           canMix: false,
                           canPdfStudio: false,
+                          canThesisAudit: false,
                         };
 
                     const userSavedCount = snapshots.filter(
@@ -833,7 +860,8 @@ export function AdminDashboard() {
                       (perms.canAudit ? 1 : 0) +
                       (perms.canStandardize ? 1 : 0) +
                       (perms.canMix ? 1 : 0) +
-                      (perms.canPdfStudio ? 1 : 0);
+                      (perms.canPdfStudio ? 1 : 0) +
+                      (perms.canThesisAudit ? 1 : 0);
 
                     return (
                       <tr
@@ -859,11 +887,11 @@ export function AdminDashboard() {
                                   </span>
                                 ) : activeTabsCount > 0 ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
-                                    Đang mở {activeTabsCount}/4 tab
+                                    Đang mở {activeTabsCount}/5 tính năng
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300">
-                                    Đang khóa cả 4 tab
+                                    Đang khóa hết
                                   </span>
                                 )}
                               </div>
@@ -1009,7 +1037,41 @@ export function AdminDashboard() {
                           )}
                         </td>
 
-                        {/* Col 5: Quick Actions */}
+                        {/* Col 5: Thesis Word Auditor Switch */}
+                        <td className="py-4 px-2.5 text-center">
+                          {isSuper ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Toàn Quyền
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleTogglePerm(u.email, 'canThesisAudit', u.displayName)
+                              }
+                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 border ${
+                                perms.canThesisAudit
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'
+                              }`}
+                            >
+                              {perms.canThesisAudit ? (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>ĐANG MỞ</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>ĐANG KHÓA</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Col 6: Quick Actions */}
                         <td className="py-4 px-4 text-right">
                           {!isSuper && (
                             <div className="flex items-center justify-end gap-1.5">
@@ -1017,9 +1079,9 @@ export function AdminDashboard() {
                                 type="button"
                                 onClick={() => void handleGrantAll(u.email, u.displayName)}
                                 className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 font-extrabold text-[11px] hover:bg-emerald-200 transition canva-tap"
-                                title="Mở khóa cả 4 tab cho giáo viên này"
+                                title="Mở khóa toàn bộ tính năng cho giáo viên này"
                               >
-                                Mở cả 4
+                                Mở hết
                               </button>
                               <button
                                 type="button"
