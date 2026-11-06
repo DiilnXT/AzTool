@@ -179,9 +179,9 @@ function MainApp() {
     },
     {
       id: 'pdf-studio' as const,
-      step: 'DỊCH PDF PRO & CẮT PDF',
-      title: 'Dịch PDF Pro & Cắt PDF',
-      desc: 'Dịch giữ bố cục 100% • Cắt trang PDF',
+      step: 'CẮT & TÁCH TRANG PDF',
+      title: 'Cắt & Tách PDF',
+      desc: 'Cắt theo trang Setting • Xoay • Xóa',
       icon: FileSpreadsheet,
       gradient: 'from-rose-500 via-orange-500 to-amber-500',
       activeRing: 'ring-rose-500 border-rose-500 bg-rose-50/60 dark:bg-rose-950/30',
@@ -477,7 +477,7 @@ function MainApp() {
               <PdfOfficeStudio />
             ) : (
               <TabLockedView
-                tabTitle="Dịch & Dàn Trang PDF Pro Giữ Nguyên Bố Cục + Cắt & Tách Trang PDF"
+                tabTitle="Cắt & Tách Trang PDF Theo Trang Setting"
                 onGoToGuide={() => setActiveTab('guide')}
               />
             ))}
