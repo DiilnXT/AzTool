@@ -14,6 +14,7 @@ import {
 } from '@/lib/gemini';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ToastProvider';
+import { DeQLogo, AzLogoLoader } from '@/components/DeQLogo';
 import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import {
   Sparkles,
@@ -500,7 +501,7 @@ export function AiAuditor({
               }`}
             >
               {isUploading ? (
-                <RefreshCw className="w-7 h-7 animate-spin text-[#7d2ae8]" />
+                <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
               ) : (
                 <UploadCloud className="w-7 h-7 text-[#7d2ae8]" />
               )}
@@ -541,7 +542,7 @@ export function AiAuditor({
             >
               {isAuditing ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
                   <span>Đang Quét Lỗi Toàn Bộ Đề...</span>
                 </>
               ) : (
@@ -1091,17 +1092,11 @@ export function AiAuditor({
 
               {autoFixModal.loading ? (
                 <div className="py-7 px-4 text-center space-y-3 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/40">
-                  <div className="w-11 h-11 rounded-2xl bg-white dark:bg-neutral-800 shadow-sm flex items-center justify-center mx-auto border border-purple-100 dark:border-purple-800">
-                    <RefreshCw className="w-5 h-5 text-[#7d2ae8] animate-spin" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                      AzTool AI đang biên soạn 3 phương án sửa lỗi...
-                    </p>
-                    <p className="text-[11px] text-neutral-500">
-                      Đảm bảo chuẩn kiến thức khoa học &amp; duy nhất 1 đáp án đúng
-                    </p>
-                  </div>
+                  <AzLogoLoader
+                    size="md"
+                    label="AzTool AI đang suy nghĩ & biên soạn 3 phương án sửa lỗi..."
+                    sublabel="Đảm bảo chuẩn kiến thức khoa học & duy nhất 1 đáp án đúng"
+                  />
                   <div className="w-40 h-1.5 mx-auto rounded-full bg-purple-100 dark:bg-neutral-800 overflow-hidden">
                     <div className="h-full w-1/2 canva-gradient-bg rounded-full loading-shimmer-bar" />
                   </div>
@@ -1228,10 +1223,11 @@ export function AiAuditor({
 
               {analyzingQuestion.loading ? (
                 <div className="py-8 text-center space-y-2.5">
-                  <RefreshCw className="w-6 h-6 text-[#7d2ae8] animate-spin mx-auto" />
-                  <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-                    Đang phân tích tính đúng sai của từng phương án...
-                  </p>
+                  <AzLogoLoader
+                    size="md"
+                    label="AzTool AI đang suy nghĩ & phân tích sâu..."
+                    sublabel="Đang kiểm định tính đúng sai của từng phương án trả lời"
+                  />
                 </div>
               ) : (
                 <div className="text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-900 max-h-72 overflow-y-auto border border-neutral-200/80 dark:border-neutral-800">

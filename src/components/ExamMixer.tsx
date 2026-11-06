@@ -19,6 +19,7 @@ import {
   Grid,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { DeQLogo } from '@/components/DeQLogo';
 
 interface ExamMixerProps {
   examMetadata: ExamMetadata;
@@ -239,7 +240,11 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
               disabled={isGenerating || questions.length === 0}
               className="canva-btn-primary w-full py-3 rounded-xl text-xs font-bold shadow-md transition canva-tap flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <Shuffle className="w-4 h-4" />
+              {isGenerating ? (
+                <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+              ) : (
+                <Shuffle className="w-4 h-4" />
+              )}
               <span>{isGenerating ? 'Đang xáo trộn...' : `Bắt Đầu Trộn ${numExams} Mã Đề`}</span>
             </button>
           </div>
@@ -270,7 +275,11 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
                 disabled={isZipping}
                 className="canva-btn-primary px-5 py-2 rounded-xl text-xs font-bold shadow-md transition canva-tap flex items-center gap-2"
               >
-                <Archive className="w-4 h-4" />
+                {isZipping ? (
+                  <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+                ) : (
+                  <Archive className="w-4 h-4" />
+                )}
                 <span>{isZipping ? 'Đang đóng gói ZIP...' : `Tải Trọn Bộ ${mixedExams.length} Mã Đề (.ZIP)`}</span>
               </button>
             </div>

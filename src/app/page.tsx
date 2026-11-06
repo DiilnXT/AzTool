@@ -8,6 +8,7 @@ import { LandingPage } from '@/components/LandingPage';
 import { ExamStandardizer } from '@/components/ExamStandardizer';
 import { ExamMixer } from '@/components/ExamMixer';
 import { AiAuditor } from '@/components/AiAuditor';
+import { PdfOfficeStudio } from '@/components/PdfOfficeStudio';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { UserGuide } from '@/components/UserGuide';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -17,6 +18,7 @@ import {
   Sparkles,
   FileCheck,
   Shuffle,
+  FileSpreadsheet,
   Crown,
   Lock,
   Unlock,
@@ -113,7 +115,7 @@ function TabLockedView({
 function MainApp() {
   const { user, systemConfig, isLoaded, isSuperAdmin, hasTabAccess } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide'
+    'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide'
   >('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -138,6 +140,7 @@ function MainApp() {
   const canUseAudit = hasTabAccess('ai-audit');
   const canUseStandardize = hasTabAccess('standardize');
   const canUseMix = hasTabAccess('mix');
+  const canUsePdfStudio = hasTabAccess('pdf-studio');
 
   const navCards = [
     {
@@ -171,6 +174,17 @@ function MainApp() {
       gradient: 'from-[#ff66c4] to-[#7d2ae8]',
       activeRing: 'ring-purple-500 border-purple-500 bg-purple-50/60 dark:bg-purple-950/30',
       unlocked: canUseMix,
+      requirePerm: true,
+    },
+    {
+      id: 'pdf-studio' as const,
+      step: 'PHÂN HỆ 04',
+      title: 'PDF & Office Studio',
+      desc: 'Đổi PDF/Word/Excel/PPT & Sửa PDF',
+      icon: FileSpreadsheet,
+      gradient: 'from-rose-500 via-orange-500 to-amber-500',
+      activeRing: 'ring-rose-500 border-rose-500 bg-rose-50/60 dark:bg-rose-950/30',
+      unlocked: canUsePdfStudio,
       requirePerm: true,
     },
     {
@@ -208,10 +222,10 @@ function MainApp() {
 
       {/* High-Contrast Feature Module Dock */}
       <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div
-            className={`grid grid-cols-2 ${
-              isSuperAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+            className={`grid grid-cols-2 sm:grid-cols-3 ${
+              isSuperAdmin ? 'xl:grid-cols-6' : 'xl:grid-cols-5'
             } gap-2.5 sm:gap-3`}
           >
             {navCards.map(card => {
@@ -355,6 +369,16 @@ function MainApp() {
             ) : (
               <TabLockedView
                 tabTitle="Phân Hệ 03: Trộn Mã Đề 25% Cân Bằng Đáp Án"
+                onGoToGuide={() => setActiveTab('guide')}
+              />
+            ))}
+
+          {activeTab === 'pdf-studio' &&
+            (canUsePdfStudio ? (
+              <PdfOfficeStudio />
+            ) : (
+              <TabLockedView
+                tabTitle="Phân Hệ 04: PDF & Office Studio (14 Công Cụ Chuyển Đổi & Chỉnh Sửa PDF)"
                 onGoToGuide={() => setActiveTab('guide')}
               />
             ))}

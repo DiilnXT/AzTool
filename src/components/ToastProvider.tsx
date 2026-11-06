@@ -1,14 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { DeQLogo } from '@/components/DeQLogo';
 import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
   Info,
   X,
-  Sparkles,
-  Loader2,
 } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -171,26 +170,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         })}
       </div>
 
-      {/* Global Full-Screen Canva Loading HUD */}
+      {/* Global Full-Screen Canva Loading HUD with Animated AzTool Calligraphy Logo */}
       {loadingHud.isOpen && (
         <div
           role="dialog"
           aria-modal="true"
           aria-busy="true"
-          className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter"
+          className="fixed inset-0 z-[110] bg-black/55 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter"
         >
-          <div className="relative overflow-hidden canva-card rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl border border-purple-200 dark:border-purple-900/50 modal-card-enter space-y-4">
-            {/* Animated Canva Gradient Orbital Spinner */}
-            <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-2 border-purple-200 dark:border-purple-900/40" />
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#7d2ae8] border-r-[#00c4cc] animate-spin" />
-              <div className="w-10 h-10 rounded-2xl canva-gradient-bg text-white flex items-center justify-center shadow-lg shadow-purple-500/30">
-                <Sparkles className="w-5 h-5 animate-pulse text-amber-200" />
-              </div>
+          <div className="relative overflow-hidden canva-card rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl border-2 border-purple-300/60 dark:border-purple-800/60 modal-card-enter space-y-5">
+            {/* Animated AzTool Logo Spinner */}
+            <div className="relative mx-auto flex flex-col items-center justify-center py-2 px-4 rounded-2xl bg-gradient-to-r from-purple-500/10 via-cyan-500/10 to-pink-500/10 border border-purple-500/20">
+              <DeQLogo size="lg" showSubtitle={false} isLoadingMode />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-sm font-bold text-neutral-900 dark:text-white tracking-tight">
+              <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white tracking-tight">
                 {loadingHud.title}
               </h3>
               {loadingHud.subtitle && (
@@ -201,7 +196,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </div>
 
             {/* Shimmer Progress Bar */}
-            <div className="w-full h-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+            <div className="w-full h-2 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
               {typeof loadingHud.progress === 'number' ? (
                 <div
                   className="h-full canva-gradient-bg rounded-full transition-all duration-300"

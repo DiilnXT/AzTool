@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide';
-  setActiveTab: (tab: 'standardize' | 'mix' | 'ai-audit' | 'admin' | 'guide') => void;
+  activeTab: 'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide';
+  setActiveTab: (tab: 'standardize' | 'mix' | 'ai-audit' | 'pdf-studio' | 'admin' | 'guide') => void;
   openSettings: () => void;
   onOpenLanding?: () => void;
   questionsCount?: number;
@@ -55,7 +55,8 @@ export function Navbar({
   const grantedTabsCount =
     (hasTabAccess('ai-audit') ? 1 : 0) +
     (hasTabAccess('standardize') ? 1 : 0) +
-    (hasTabAccess('mix') ? 1 : 0);
+    (hasTabAccess('mix') ? 1 : 0) +
+    (hasTabAccess('pdf-studio') ? 1 : 0);
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/95 dark:bg-[#11131a]/95 backdrop-blur-xl border-b border-neutral-200/80 dark:border-neutral-800/90 shadow-2xs transition-colors">
@@ -149,7 +150,7 @@ export function Navbar({
                       </span>
                     ) : (
                       <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                        <ShieldCheck className="w-2.5 h-2.5" /> {grantedTabsCount}/3 Tab Mở
+                        <ShieldCheck className="w-2.5 h-2.5" /> {grantedTabsCount}/4 Tab Mở
                       </span>
                     )}
                   </div>

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, TabPermissions } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
+import { getProtectedGoogleClientId, initClientSecurityShield } from '@/lib/security-shield';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
 const STORAGE_USER_KEY = 'aztool_current_user';
@@ -20,7 +21,6 @@ declare global {
 export interface SystemConfig {
   defaultGeminiApiKey: string;
   defaultGeminiModel: string;
-  googleClientId: string;
   announcement: string;
   maintenanceMode: boolean;
   defaultUniversity: string;
@@ -30,12 +30,14 @@ export const defaultUserPermissions: TabPermissions = {
   canAudit: false,
   canStandardize: false,
   canMix: false,
+  canPdfStudio: false,
 };
 
 export const superAdminPermissions: TabPermissions = {
   canAudit: true,
   canStandardize: true,
   canMix: true,
+  canPdfStudio: true,
 };
 
 interface AuthContextType {
@@ -50,7 +52,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isPro: boolean;
   permissionsMap: Record<string, TabPermissions>;
-  hasTabAccess: (tab: 'ai-audit' | 'standardize' | 'mix') => boolean;
+  hasTabAccess: (tab: 'ai-audit' | 'standardize' | 'mix' | 'pdf-studio') => boolean;
   updateUserPermissions: (
     email: string,
     perms: TabPermissions,
@@ -64,7 +66,7 @@ interface AuthContextType {
     customName?: string,
     customAvatar?: string
   ) => Promise<void>;
-  loginWithRealGoogleOAuth: (overrideClientId?: string) => Promise<boolean>;
+  loginWithRealGoogleOAuth: () => Promise<boolean>;
   logout: () => void;
   updateDisplayName: (newName: string) => void;
   updateUserRole: (userId: string, newRole: UserProfile['role']) => void;
@@ -78,11 +80,8 @@ interface AuthContextType {
 const defaultSystemConfig: SystemConfig = {
   defaultGeminiApiKey: '',
   defaultGeminiModel: DEFAULT_MODEL_ID,
-  googleClientId:
-    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-    '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
   announcement:
-    'AzTool AI Studio • Nền tảng công cụ tự động hóa tài liệu, khảo thí & trợ lý AI thông minh',
+    'AzTool AI Studio • Nền tảng công cụ tự động hóa tài liệu PDF/Office, khảo thí & trợ lý AI thông minh',
   maintenanceMode: false,
   defaultUniversity: '',
 };
@@ -99,9 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load Google Identity Services Script
+  // Initialize Security Shield & Google Identity Services Script
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    initClientSecurityShield();
+
     const existingScript = document.getElementById('google-gsi-client');
     if (!existingScript) {
       const script = document.createElement('script');
@@ -252,18 +253,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setPermissionsMap(initialPerms);
 
-      // 3. System Config
+      // 3. System Config (Strictly without googleClientId in storage)
       const storedConfig =
         localStorage.getItem(STORAGE_SYSTEM_CONFIG) || localStorage.getItem('deq_system_config');
       if (storedConfig) {
         const parsedCfg = JSON.parse(storedConfig);
+        if (parsedCfg && 'googleClientId' in parsedCfg) {
+          delete parsedCfg.googleClientId;
+          localStorage.setItem(STORAGE_SYSTEM_CONFIG, JSON.stringify(parsedCfg));
+        }
         setSystemConfig(prev => ({
           ...prev,
           ...parsedCfg,
-          googleClientId:
-            parsedCfg.googleClientId ||
-            process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-            '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com',
         }));
       }
 
@@ -336,7 +337,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
   );
 
-  const hasTabAccess = (tab: 'ai-audit' | 'standardize' | 'mix'): boolean => {
+  const hasTabAccess = (
+    tab: 'ai-audit' | 'standardize' | 'mix' | 'pdf-studio'
+  ): boolean => {
     if (!user) return false;
     if (isSuperAdmin) return true;
     const norm = user.email.toLowerCase();
@@ -344,6 +347,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (tab === 'ai-audit') return Boolean(perms.canAudit);
     if (tab === 'standardize') return Boolean(perms.canStandardize);
     if (tab === 'mix') return Boolean(perms.canMix);
+    if (tab === 'pdf-studio') {
+      return perms.canPdfStudio !== undefined
+        ? Boolean(perms.canPdfStudio)
+        : Boolean(perms.canStandardize);
+    }
     return false;
   };
 
@@ -362,6 +370,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             canAudit: Boolean(perms.canAudit),
             canStandardize: Boolean(perms.canStandardize),
             canMix: Boolean(perms.canMix),
+            canPdfStudio:
+              perms.canPdfStudio !== undefined
+                ? Boolean(perms.canPdfStudio)
+                : Boolean(perms.canStandardize),
           };
 
     // 1. Update permissionsMap immediately
@@ -443,6 +455,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canAudit: true,
         canStandardize: true,
         canMix: true,
+        canPdfStudio: true,
       },
       displayName
     );
@@ -453,6 +466,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canAudit: false,
       canStandardize: false,
       canMix: false,
+      canPdfStudio: false,
     });
   };
 
@@ -516,13 +530,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithRealGoogleOAuth = async (overrideClientId?: string): Promise<boolean> => {
-    const activeClientId = (
-      overrideClientId ||
-      systemConfig.googleClientId ||
-      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-      '900284408463-p2a82c6pa12p3r13b2b2drd5rknk0q2r.apps.googleusercontent.com'
-    ).trim();
+  const loginWithRealGoogleOAuth = async (): Promise<boolean> => {
+    const activeClientId = getProtectedGoogleClientId();
 
     if (!activeClientId) {
       return false;

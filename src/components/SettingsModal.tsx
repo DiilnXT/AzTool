@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ToastProvider';
+import { DeQLogo } from '@/components/DeQLogo';
 import { getAvailableKeys, callGeminiApi, POPULAR_GEMINI_MODELS, DEFAULT_MODEL_ID } from '@/lib/gemini';
 import {
   X,
@@ -12,9 +13,7 @@ import {
   AlertCircle,
   Sparkles,
   Cpu,
-  RefreshCw,
   Check,
-  ShieldCheck,
   User,
   Sun,
   Moon,
@@ -44,7 +43,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [modelIdInput, setModelIdInput] = useState(DEFAULT_MODEL_ID);
-  const [googleClientIdInput, setGoogleClientIdInput] = useState('');
   const [testingStatus, setTestingStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [mounted, setMounted] = useState(false);
@@ -72,10 +70,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       } else if (systemConfig.defaultGeminiModel) {
         setModelIdInput(systemConfig.defaultGeminiModel);
       }
-
-      if (systemConfig.googleClientId) {
-        setGoogleClientIdInput(systemConfig.googleClientId);
-      }
     }
   }, [user, systemConfig, isSuperAdmin, isOpen]);
 
@@ -91,7 +85,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (isSuperAdmin) {
       const trimmedModel = modelIdInput.trim() || DEFAULT_MODEL_ID;
       const trimmedKeys = apiKeyInput.trim();
-      const trimmedGoogleClientId = googleClientIdInput.trim();
 
       saveUserApiKey(trimmedKeys);
       saveUserGeminiModel(trimmedModel);
@@ -99,7 +92,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       updateSystemConfig({
         defaultGeminiApiKey: trimmedKeys,
         defaultGeminiModel: trimmedModel,
-        ...(trimmedGoogleClientId ? { googleClientId: trimmedGoogleClientId } : {}),
       });
 
       toast.success(
@@ -241,12 +233,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           </div>
 
-          {/* 3. ADMIN-ONLY ENGINE SETTINGS (Strictly hidden from all regular users!) */}
+          {/* 3. ADMIN-ONLY AI ENGINE SETTINGS (Google OAuth Key is permanently vaulted & hidden!) */}
           {isSuperAdmin && (
             <div className="space-y-4 pt-4 mt-2 border-t border-neutral-200 dark:border-neutral-800">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 text-[10px] font-bold">
                 <Cpu className="w-3 h-3" />
-                <span>Cấu Hình Dành Riêng Cho Quản Trị Viên</span>
+                <span>Cấu Hình AI Dành Riêng Cho Quản Trị Viên</span>
               </div>
 
               <div className="space-y-2">
@@ -311,19 +303,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#00c4cc]" />
-                  <span>Google OAuth Client ID:</span>
-                </label>
-                <input
-                  type="text"
-                  value={googleClientIdInput}
-                  onChange={e => setGoogleClientIdInput(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-mono text-[11px] focus:ring-2 focus:ring-[#7d2ae8] outline-hidden"
-                />
-              </div>
-
               <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <button
@@ -333,11 +312,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     className="canva-btn-secondary px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
                   >
                     {testingStatus === 'testing' ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#7d2ae8]" />
+                      <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
                     ) : (
                       <Sparkles className="w-3.5 h-3.5 text-[#7d2ae8]" />
                     )}
-                    <span>Test API Key</span>
+                    <span>{testingStatus === 'testing' ? 'Đang kiểm tra...' : 'Test API Key'}</span>
                   </button>
                   {testingStatus === 'success' && (
                     <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">

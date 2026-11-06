@@ -27,6 +27,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { DeQLogo } from '@/components/DeQLogo';
 
 interface ExamStandardizerProps {
   examMetadata: ExamMetadata;
@@ -546,9 +547,15 @@ export function ExamStandardizer({
                   disabled={isProcessing}
                   className="hidden"
                 />
-                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-neutral-800 text-[#7d2ae8] flex items-center justify-center shadow-md group-hover:scale-105 transition-transform mb-2.5 border border-purple-100">
-                  <UploadCloud className="w-5 h-5" />
-                </div>
+                {isProcessing ? (
+                  <div className="mb-2">
+                    <DeQLogo size="md" showSubtitle={false} isLoadingMode />
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 rounded-2xl bg-white dark:bg-neutral-800 text-[#7d2ae8] flex items-center justify-center shadow-md group-hover:scale-105 transition-transform mb-2.5 border border-purple-100">
+                    <UploadCloud className="w-5 h-5" />
+                  </div>
+                )}
                 <p className="text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-200 text-center">
                   {isProcessing ? 'Đang phân tích đề thi...' : 'Kéo thả hoặc nhấn để chọn file đề (.docx)'}
                 </p>

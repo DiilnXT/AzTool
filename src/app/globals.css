@@ -172,76 +172,145 @@
 }
 
 /* ========================================================
-   CALLIGRAPHY LOGO STROKE ANIMATION (AzTool)
+   CONTINUOUS CALLIGRAPHY LOGO STROKE ANIMATION (AzTool)
    ======================================================== */
-@keyframes drawCalligraphy {
+@keyframes drawCalligraphyContinuous {
   0% {
     stroke-dashoffset: 480;
-    opacity: 0.15;
+    opacity: 0.35;
   }
-  100% {
+  28%, 76% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
+  92% {
+    stroke-dashoffset: -480;
+    opacity: 0.45;
+  }
+  100% {
+    stroke-dashoffset: 480;
+    opacity: 0.35;
+  }
 }
 
-@keyframes popCalligraphyDot {
-  0%, 70% {
-    transform: scale(0);
-    opacity: 0;
+@keyframes drawCalligraphyFast {
+  0% {
+    stroke-dashoffset: 480;
+    opacity: 0.4;
   }
-  88% {
-    transform: scale(1.4);
+  45%, 70% {
+    stroke-dashoffset: 0;
     opacity: 1;
   }
   100% {
-    transform: scale(1);
-    opacity: 1;
+    stroke-dashoffset: -480;
+    opacity: 0.4;
   }
 }
 
-.calligraphy-stroke-1 {
-  stroke-dasharray: 480;
-  stroke-dashoffset: 0;
-  animation: drawCalligraphy 1.05s cubic-bezier(0.35, 0, 0.25, 1) forwards;
+@keyframes popCalligraphyDotInfinite {
+  0%, 15% {
+    transform: scale(0.5);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 1;
+  }
+  85%, 100% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
 }
 
-.calligraphy-stroke-2 {
-  stroke-dasharray: 480;
-  stroke-dashoffset: 0;
-  animation: drawCalligraphy 1.05s cubic-bezier(0.35, 0, 0.25, 1) 0.22s backwards;
+@keyframes azLogoFloatMotion {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
 }
 
-.calligraphy-stroke-3 {
-  stroke-dasharray: 480;
-  stroke-dashoffset: 0;
-  animation: drawCalligraphy 1.1s cubic-bezier(0.35, 0, 0.25, 1) 0.44s backwards;
+@keyframes azLogoLoadingPulseMotion {
+  0%, 100% {
+    transform: scale(0.98) translateY(0px);
+    filter: drop-shadow(0 0 6px rgba(125, 42, 232, 0.35));
+  }
+  50% {
+    transform: scale(1.04) translateY(-2px);
+    filter: drop-shadow(0 0 14px rgba(0, 196, 204, 0.6));
+  }
 }
 
-.calligraphy-stroke-4 {
-  stroke-dasharray: 480;
-  stroke-dashoffset: 0;
-  animation: drawCalligraphy 1.1s cubic-bezier(0.35, 0, 0.25, 1) 0.64s backwards;
+.az-logo-float {
+  animation: azLogoFloatMotion 3.6s ease-in-out infinite;
 }
 
-.calligraphy-stroke-5 {
-  stroke-dasharray: 480;
-  stroke-dashoffset: 0;
-  animation: drawCalligraphy 1.25s cubic-bezier(0.22, 1, 0.36, 1) 0.82s backwards;
+.az-logo-loading-pulse {
+  animation: azLogoLoadingPulseMotion 1.4s ease-in-out infinite;
 }
 
-.calligraphy-dot-pop {
+.calligraphy-loop-1 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+.calligraphy-loop-2 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.18s infinite;
+}
+
+.calligraphy-loop-3 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.36s infinite;
+}
+
+.calligraphy-loop-4 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.54s infinite;
+}
+
+.calligraphy-loop-5 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.22, 1, 0.36, 1) 0.72s infinite;
+}
+
+.calligraphy-loop-fast-1 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+.calligraphy-loop-fast-2 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.08s infinite;
+}
+
+.calligraphy-loop-fast-3 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.16s infinite;
+}
+
+.calligraphy-loop-fast-4 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.24s infinite;
+}
+
+.calligraphy-loop-fast-5 {
+  stroke-dasharray: 480;
+  animation: drawCalligraphyFast 1.7s cubic-bezier(0.22, 1, 0.36, 1) 0.32s infinite;
+}
+
+.calligraphy-dot-infinite {
   transform-box: fill-box;
   transform-origin: center;
-  animation: popCalligraphyDot 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: popCalligraphyDotInfinite 2.2s ease-in-out infinite;
 }
 
-.group:hover .calligraphy-stroke-1,
-.group:hover .calligraphy-stroke-2,
-.group:hover .calligraphy-stroke-3,
-.group:hover .calligraphy-stroke-4,
-.group:hover .calligraphy-stroke-5 {
-  animation: drawCalligraphy 0.95s cubic-bezier(0.35, 0, 0.25, 1) forwards;
+.calligraphy-dot-infinite-delayed {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: popCalligraphyDotInfinite 2.2s ease-in-out 0.7s infinite;
 }
 
 /* Canva Ambient Aurora Glow */

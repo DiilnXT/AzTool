@@ -3,8 +3,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { UserProfile, TabPermissions } from '@/types/exam';
+import { enforceApiSecurity, sanitizeInput } from '@/lib/security-shield';
 
 const SUPER_ADMIN = 'lenhatduy.vietnam@gmail.com';
+
+const SUPER_PERMS: TabPermissions = {
+  canAudit: true,
+  canStandardize: true,
+  canMix: true,
+  canPdfStudio: true,
+};
 
 function getStoragePath(filename: string): string {
   const localDir = path.join(process.cwd(), 'data');
@@ -31,7 +39,7 @@ const defaultAdminUser: UserProfile = {
   displayName: 'Lê Nhật Duy',
   photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=duy',
   role: 'super_admin',
-  permissions: { canAudit: true, canStandardize: true, canMix: true },
+  permissions: SUPER_PERMS,
   createdAt: '2025-01-01',
   lastActive: '2026-11-06T00:00:00.000Z',
   examsGeneratedCount: 120,
@@ -81,7 +89,12 @@ function readUsers(): UserProfile[] {
               displayName: item.userName || em.split('@')[0],
               photoURL: item.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${em}`,
               role: em === SUPER_ADMIN ? 'super_admin' : 'free',
-              permissions: { canAudit: false, canStandardize: false, canMix: false },
+              permissions: {
+                canAudit: false,
+                canStandardize: false,
+                canMix: false,
+                canPdfStudio: false,
+              },
               createdAt: item.createdAtIso?.split('T')[0] || '2026-11-06',
               lastActive: item.createdAtIso || '2026-11-06T00:00:00.000Z',
               examsGeneratedCount: 1,
@@ -101,11 +114,7 @@ function readUsers(): UserProfile[] {
   );
   if (adminIdx >= 0) {
     globalForUsers.__azUsers[adminIdx].role = 'super_admin';
-    globalForUsers.__azUsers[adminIdx].permissions = {
-      canAudit: true,
-      canStandardize: true,
-      canMix: true,
-    };
+    globalForUsers.__azUsers[adminIdx].permissions = SUPER_PERMS;
   } else {
     globalForUsers.__azUsers.unshift(defaultAdminUser);
   }
@@ -123,14 +132,21 @@ function writeUsers(users: UserProfile[]) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 120 });
+  if (blocked) return blocked;
+
   const users = readUsers();
   return NextResponse.json({ success: true, count: users.length, users });
 }
 
 export async function POST(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 60 });
+  if (blocked) return blocked;
+
   try {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = sanitizeInput(rawBody);
     const { user, email, displayName, photoURL, permissions, role } = body;
 
     const currentUsers = [...readUsers()];
@@ -144,8 +160,13 @@ export async function POST(req: Request) {
     const existingIndex = currentUsers.findIndex(u => u.email.toLowerCase() === targetEmail);
 
     const defaultPerms: TabPermissions = isSuper
-      ? { canAudit: true, canStandardize: true, canMix: true }
-      : permissions || { canAudit: false, canStandardize: false, canMix: false };
+      ? SUPER_PERMS
+      : permissions || {
+          canAudit: false,
+          canStandardize: false,
+          canMix: false,
+          canPdfStudio: false,
+        };
 
     if (existingIndex >= 0) {
       currentUsers[existingIndex] = {
@@ -155,7 +176,7 @@ export async function POST(req: Request) {
         photoURL: photoURL || user?.photoURL || currentUsers[existingIndex].photoURL,
         role: isSuper ? 'super_admin' : role || currentUsers[existingIndex].role,
         permissions: isSuper
-          ? { canAudit: true, canStandardize: true, canMix: true }
+          ? SUPER_PERMS
           : permissions !== undefined
           ? permissions
           : currentUsers[existingIndex].permissions,
@@ -192,6 +213,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 40 });
+  if (blocked) return blocked;
+
   try {
     const { searchParams } = new URL(req.url);
     const email = searchParams.get('email')?.toLowerCase();

@@ -114,25 +114,29 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                 disabled={isLoggingIn}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md hover:border-[#7d2ae8] text-xs font-bold text-neutral-800 dark:text-white transition canva-tap"
               >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
-                  />
-                </svg>
-                <span>Đăng Nhập</span>
+                {isLoggingIn ? (
+                  <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+                ) : (
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+                    />
+                  </svg>
+                )}
+                <span>{isLoggingIn ? 'Đang kết nối...' : 'Đăng Nhập'}</span>
               </button>
             )}
           </div>
@@ -174,25 +178,29 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   disabled={isLoggingIn}
                   className="w-full sm:w-auto flex items-center justify-center gap-3 px-7 py-4 rounded-2xl bg-white text-neutral-900 font-black text-sm shadow-2xl hover:scale-[1.02] transition canva-tap"
                 >
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
-                    />
-                  </svg>
-                  <span>Đăng Nhập Bằng Google</span>
+                  {isLoggingIn ? (
+                    <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+                  ) : (
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+                      />
+                    </svg>
+                  )}
+                  <span>{isLoggingIn ? 'Đang Xác Thực...' : 'Đăng Nhập Bằng Google'}</span>
                 </button>
 
                 <button
@@ -237,7 +245,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       {/* AzTool Multi-App Ecosystem Section */}
       <section className="max-w-6xl w-full mx-auto px-4 sm:px-8 -mt-12 pb-16 relative z-20 space-y-10">
         {/* Active Suite Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <div
             onClick={onEnterWorkspace}
             className="canva-card-interactive p-6 space-y-3 border border-purple-100 dark:border-purple-900/40 cursor-pointer"
@@ -295,6 +303,26 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             </h3>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
               Thuật toán hoán vị thông minh phân bổ đều 25% đáp án A-B-C-D, tự động điền mã đề, đánh dấu phiếu trả lời và đóng gói trọn bộ file nén ZIP.
+            </p>
+          </div>
+
+          <div
+            onClick={onEnterWorkspace}
+            className="canva-card-interactive p-6 space-y-3 border border-rose-100 dark:border-rose-900/40 cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-500 via-orange-500 to-amber-500 text-white flex items-center justify-center shadow-md">
+                <Layers className="w-6 h-6" />
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                14 Công Cụ Mới
+              </span>
+            </div>
+            <h3 className="text-base font-black text-neutral-900 dark:text-white">
+              PDF &amp; Office Studio Chuyên Sâu
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Chuyển đổi PDF sang Word/PPTX, Word/Excel/PPT sang PDF, Xoay/Xóa trang, Đánh số trang, Xén viền trắng, Cắt/Gộp/Nén PDF và Trích xuất ảnh.
             </p>
           </div>
         </div>

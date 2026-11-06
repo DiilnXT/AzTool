@@ -75,6 +75,7 @@ export interface TabPermissions {
   canAudit: boolean;
   canStandardize: boolean;
   canMix: boolean;
+  canPdfStudio?: boolean;
 }
 
 export interface UserProfile {

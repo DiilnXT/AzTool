@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { enforceApiSecurity, sanitizeInput } from '@/lib/security-shield';
 
 export interface ServerVaultItem {
   id: string;
@@ -65,7 +66,7 @@ function readVault(): ServerVaultItem[] {
   } catch {
     // ignore
   }
-  return globalForVault.__azVault;
+  return globalForVault.__azVault || [];
 }
 
 function writeVault(items: ServerVaultItem[]) {
@@ -79,6 +80,9 @@ function writeVault(items: ServerVaultItem[]) {
 }
 
 export async function GET(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 120 });
+  if (blocked) return blocked;
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -101,8 +105,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 50, maxBodyBytes: 20 * 1024 * 1024 });
+  if (blocked) return blocked;
+
   try {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = sanitizeInput(rawBody);
     const items = readVault();
 
     const newItem: ServerVaultItem = {
@@ -135,8 +143,12 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 80 });
+  if (blocked) return blocked;
+
   try {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = sanitizeInput(rawBody);
     const { id, isViewed } = body;
 
     const items = [...readVault()];
@@ -154,8 +166,12 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const blocked = enforceApiSecurity(req, { maxRequests: 40 });
+  if (blocked) return blocked;
+
   try {
-    const body = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({}));
+    const body = sanitizeInput(rawBody);
     const { ids, all, allViewed } = body;
 
     let items = [...readVault()];

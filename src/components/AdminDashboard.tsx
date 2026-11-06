@@ -47,8 +47,10 @@ import {
   CheckCircle2,
   Mail,
   UserCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { DeQLogo, AzLogoLoader } from '@/components/DeQLogo';
 
 export function AdminDashboard() {
   const {
@@ -89,14 +91,14 @@ export function AdminDashboard() {
   const [addPermAudit, setAddPermAudit] = useState(true);
   const [addPermStandardize, setAddPermStandardize] = useState(true);
   const [addPermMix, setAddPermMix] = useState(true);
+  const [addPermPdfStudio, setAddPermPdfStudio] = useState(true);
 
-  // System settings state
+  // System settings state (Google OAuth Key is permanently hidden in Security Vault)
   const [apiKeyInput, setApiKeyInput] = useState(systemConfig.defaultGeminiApiKey || '');
   const [modelIdInput, setModelIdInput] = useState(
     systemConfig.defaultGeminiModel || DEFAULT_MODEL_ID
   );
   const [announcementInput, setAnnouncementInput] = useState(systemConfig.announcement || '');
-  const [clientIdInput, setClientIdInput] = useState(systemConfig.googleClientId || '');
 
   const hasLoadedOnceRef = useRef(false);
 
@@ -141,6 +143,7 @@ export function AdminDashboard() {
           canAudit: false,
           canStandardize: false,
           canMix: false,
+          canPdfStudio: false,
         },
       });
     }
@@ -178,6 +181,7 @@ export function AdminDashboard() {
             canAudit: false,
             canStandardize: false,
             canMix: false,
+            canPdfStudio: false,
           },
           createdAt: s.createdAtIso?.split('T')[0] || '2026-01-01',
           lastActive: s.createdAtIso || new Date().toISOString(),
@@ -219,6 +223,7 @@ export function AdminDashboard() {
         canAudit: false,
         canStandardize: false,
         canMix: false,
+        canPdfStudio: false,
       };
 
     const updated: TabPermissions = {
@@ -231,6 +236,7 @@ export function AdminDashboard() {
       canAudit: '1. AI Soát Lỗi Đề',
       canStandardize: '2. Chuẩn Hóa 1 Chạm',
       canMix: '3. Trộn Mã Đề 25%',
+      canPdfStudio: '4. PDF & Office Studio',
     };
     toast.info(
       `${updated[key] ? 'Đã BẬT quyền' : 'Đã KHÓA quyền'}`,
@@ -241,20 +247,20 @@ export function AdminDashboard() {
   const handleGrantAll = async (email: string, displayName?: string) => {
     await updateUserPermissions(
       email,
-      { canAudit: true, canStandardize: true, canMix: true },
+      { canAudit: true, canStandardize: true, canMix: true, canPdfStudio: true },
       displayName
     );
-    toast.success('Đã mở khóa cả 3 Tab!', `Tài khoản ${email} đã được cấp toàn quyền.`);
+    toast.success('Đã mở khóa cả 4 Tab!', `Tài khoản ${email} đã được cấp toàn quyền.`);
     confetti({ particleCount: 30, spread: 45 });
   };
 
   const handleRevokeAll = async (email: string, displayName?: string) => {
     await updateUserPermissions(
       email,
-      { canAudit: false, canStandardize: false, canMix: false },
+      { canAudit: false, canStandardize: false, canMix: false, canPdfStudio: false },
       displayName
     );
-    toast.warning('Đã thu hồi quyền cả 3 Tab!', `Tài khoản ${email} hiện đang bị khóa.`);
+    toast.warning('Đã thu hồi quyền cả 4 Tab!', `Tài khoản ${email} hiện đang bị khóa.`);
   };
 
   const handleAddNewTeacherWithPerms = async (e: React.FormEvent) => {
@@ -267,6 +273,7 @@ export function AdminDashboard() {
       canAudit: addPermAudit,
       canStandardize: addPermStandardize,
       canMix: addPermMix,
+      canPdfStudio: addPermPdfStudio,
     };
 
     await updateUserPermissions(email, newPerms, name);
@@ -429,7 +436,7 @@ export function AdminDashboard() {
     const isSuper = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
     if (isSuper) return true;
     const p = permissionsMap[u.email.toLowerCase()] || u.permissions;
-    return p?.canAudit || p?.canStandardize || p?.canMix;
+    return p?.canAudit || p?.canStandardize || p?.canMix || p?.canPdfStudio;
   }).length;
 
   // Filter questions inside preview modal
@@ -450,7 +457,6 @@ export function AdminDashboard() {
       defaultGeminiApiKey: apiKeyInput.trim(),
       defaultGeminiModel: modelIdInput.trim() || DEFAULT_MODEL_ID,
       announcement: announcementInput.trim(),
-      ...(clientIdInput.trim() ? { googleClientId: clientIdInput.trim() } : {}),
     });
     toast.success(
       'Đã lưu cấu hình toàn hệ thống!',
@@ -507,7 +513,11 @@ export function AdminDashboard() {
               className="px-4 py-3 rounded-2xl bg-white text-neutral-900 hover:bg-amber-50 transition canva-tap flex items-center gap-2 text-xs font-black shadow-lg"
               title="Đồng bộ dữ liệu mới nhất"
             >
-              <RefreshCw className={`w-4 h-4 text-[#7d2ae8] ${isRefreshingAll ? 'animate-spin' : ''}`} />
+              {isRefreshingAll ? (
+                <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+              ) : (
+                <RefreshCw className="w-4 h-4 text-[#7d2ae8]" />
+              )}
               <span>{isRefreshingAll ? 'Đang đồng bộ...' : 'Làm Mới Dữ Liệu'}</span>
             </button>
           </div>
@@ -539,7 +549,7 @@ export function AdminDashboard() {
                 1. Phân Quyền Giáo Viên
               </div>
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Thêm Gmail &amp; bật/tắt 3 tab
+                Thêm Gmail &amp; bật/tắt 4 tab
               </div>
             </div>
           </div>
@@ -713,6 +723,22 @@ export function AdminDashboard() {
                     />
                     <span>3. Trộn Mã Đề 25%</span>
                   </label>
+
+                  <label
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
+                      addPermPdfStudio
+                        ? 'border-rose-500 bg-rose-50/80 dark:bg-rose-950/50 text-rose-900 dark:text-rose-200'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={addPermPdfStudio}
+                      onChange={e => setAddPermPdfStudio(e.target.checked)}
+                      className="rounded text-[#7d2ae8] w-4 h-4"
+                    />
+                    <span>4. PDF &amp; Office Studio</span>
+                  </label>
                 </div>
 
                 <button
@@ -758,22 +784,28 @@ export function AdminDashboard() {
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 font-extrabold bg-neutral-100/80 dark:bg-neutral-900/90">
                     <th className="py-3.5 px-4">Giáo Viên / Tài Khoản Gmail</th>
-                    <th className="py-3.5 px-3 text-center">
+                    <th className="py-3.5 px-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
-                        <Sparkles className="w-4 h-4" />
-                        <span>1. AI Soát Lỗi Đề</span>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>1. AI Soát Lỗi</span>
                       </div>
                     </th>
-                    <th className="py-3.5 px-3 text-center">
+                    <th className="py-3.5 px-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
-                        <FileCheck className="w-4 h-4" />
-                        <span>2. Chuẩn Hóa 1 Chạm</span>
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span>2. Chuẩn Hóa</span>
                       </div>
                     </th>
-                    <th className="py-3.5 px-3 text-center">
+                    <th className="py-3.5 px-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 text-purple-700 dark:text-purple-400">
-                        <Shuffle className="w-4 h-4" />
-                        <span>3. Trộn Mã Đề 25%</span>
+                        <Shuffle className="w-3.5 h-3.5" />
+                        <span>3. Trộn Đề</span>
+                      </div>
+                    </th>
+                    <th className="py-3.5 px-2.5 text-center">
+                      <div className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        <span>4. PDF &amp; Office</span>
                       </div>
                     </th>
                     <th className="py-3.5 px-4 text-right">Thao Tác Nhanh</th>
@@ -784,9 +816,14 @@ export function AdminDashboard() {
                     const normEmail = u.email.toLowerCase();
                     const isSuper = normEmail === SUPER_ADMIN_EMAIL.toLowerCase();
                     const perms: TabPermissions = isSuper
-                      ? { canAudit: true, canStandardize: true, canMix: true }
+                      ? { canAudit: true, canStandardize: true, canMix: true, canPdfStudio: true }
                       : permissionsMap[normEmail] ||
-                        u.permissions || { canAudit: false, canStandardize: false, canMix: false };
+                        u.permissions || {
+                          canAudit: false,
+                          canStandardize: false,
+                          canMix: false,
+                          canPdfStudio: false,
+                        };
 
                     const userSavedCount = snapshots.filter(
                       s => s.userEmail.toLowerCase() === normEmail
@@ -795,7 +832,8 @@ export function AdminDashboard() {
                     const activeTabsCount =
                       (perms.canAudit ? 1 : 0) +
                       (perms.canStandardize ? 1 : 0) +
-                      (perms.canMix ? 1 : 0);
+                      (perms.canMix ? 1 : 0) +
+                      (perms.canPdfStudio ? 1 : 0);
 
                     return (
                       <tr
@@ -821,11 +859,11 @@ export function AdminDashboard() {
                                   </span>
                                 ) : activeTabsCount > 0 ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
-                                    Đang mở {activeTabsCount}/3 tab
+                                    Đang mở {activeTabsCount}/4 tab
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300">
-                                    Đang khóa cả 3 tab
+                                    Đang khóa cả 4 tab
                                   </span>
                                 )}
                               </div>
@@ -840,9 +878,9 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 1: AI Audit Switch */}
-                        <td className="py-4 px-3 text-center">
+                        <td className="py-4 px-2.5 text-center">
                           {isSuper ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-xs">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Toàn Quyền
                             </span>
@@ -850,7 +888,7 @@ export function AdminDashboard() {
                             <button
                               type="button"
                               onClick={() => void handleTogglePerm(u.email, 'canAudit', u.displayName)}
-                              className={`px-3.5 py-2 rounded-xl font-extrabold text-xs transition-all canva-tap inline-flex items-center gap-2 border ${
+                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 border ${
                                 perms.canAudit
                                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                                   : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'
@@ -858,12 +896,12 @@ export function AdminDashboard() {
                             >
                               {perms.canAudit ? (
                                 <>
-                                  <Unlock className="w-3.5 h-3.5" />
+                                  <Unlock className="w-3 h-3" />
                                   <span>ĐANG MỞ</span>
                                 </>
                               ) : (
                                 <>
-                                  <Lock className="w-3.5 h-3.5" />
+                                  <Lock className="w-3 h-3" />
                                   <span>ĐANG KHÓA</span>
                                 </>
                               )}
@@ -872,9 +910,9 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 2: Standardize Switch */}
-                        <td className="py-4 px-3 text-center">
+                        <td className="py-4 px-2.5 text-center">
                           {isSuper ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-xs">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Toàn Quyền
                             </span>
@@ -884,7 +922,7 @@ export function AdminDashboard() {
                               onClick={() =>
                                 void handleTogglePerm(u.email, 'canStandardize', u.displayName)
                               }
-                              className={`px-3.5 py-2 rounded-xl font-extrabold text-xs transition-all canva-tap inline-flex items-center gap-2 border ${
+                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 border ${
                                 perms.canStandardize
                                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                                   : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'
@@ -892,12 +930,12 @@ export function AdminDashboard() {
                             >
                               {perms.canStandardize ? (
                                 <>
-                                  <Unlock className="w-3.5 h-3.5" />
+                                  <Unlock className="w-3 h-3" />
                                   <span>ĐANG MỞ</span>
                                 </>
                               ) : (
                                 <>
-                                  <Lock className="w-3.5 h-3.5" />
+                                  <Lock className="w-3 h-3" />
                                   <span>ĐANG KHÓA</span>
                                 </>
                               )}
@@ -906,9 +944,9 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 3: Mix Switch */}
-                        <td className="py-4 px-3 text-center">
+                        <td className="py-4 px-2.5 text-center">
                           {isSuper ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-xs">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Toàn Quyền
                             </span>
@@ -916,7 +954,7 @@ export function AdminDashboard() {
                             <button
                               type="button"
                               onClick={() => void handleTogglePerm(u.email, 'canMix', u.displayName)}
-                              className={`px-3.5 py-2 rounded-xl font-extrabold text-xs transition-all canva-tap inline-flex items-center gap-2 border ${
+                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 border ${
                                 perms.canMix
                                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                                   : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'
@@ -924,12 +962,12 @@ export function AdminDashboard() {
                             >
                               {perms.canMix ? (
                                 <>
-                                  <Unlock className="w-3.5 h-3.5" />
+                                  <Unlock className="w-3 h-3" />
                                   <span>ĐANG MỞ</span>
                                 </>
                               ) : (
                                 <>
-                                  <Lock className="w-3.5 h-3.5" />
+                                  <Lock className="w-3 h-3" />
                                   <span>ĐANG KHÓA</span>
                                 </>
                               )}
@@ -937,7 +975,41 @@ export function AdminDashboard() {
                           )}
                         </td>
 
-                        {/* Col 4: Quick Actions */}
+                        {/* Col 4: PDF & Office Studio Switch */}
+                        <td className="py-4 px-2.5 text-center">
+                          {isSuper ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Toàn Quyền
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleTogglePerm(u.email, 'canPdfStudio', u.displayName)
+                              }
+                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 border ${
+                                perms.canPdfStudio
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'
+                              }`}
+                            >
+                              {perms.canPdfStudio ? (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>ĐANG MỞ</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>ĐANG KHÓA</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Col 5: Quick Actions */}
                         <td className="py-4 px-4 text-right">
                           {!isSuper && (
                             <div className="flex items-center justify-end gap-1.5">
@@ -945,15 +1017,15 @@ export function AdminDashboard() {
                                 type="button"
                                 onClick={() => void handleGrantAll(u.email, u.displayName)}
                                 className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 font-extrabold text-[11px] hover:bg-emerald-200 transition canva-tap"
-                                title="Mở khóa cả 3 tab cho giáo viên này"
+                                title="Mở khóa cả 4 tab cho giáo viên này"
                               >
-                                Mở cả 3
+                                Mở cả 4
                               </button>
                               <button
                                 type="button"
                                 onClick={() => void handleRevokeAll(u.email, u.displayName)}
                                 className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 font-extrabold text-[11px] hover:bg-amber-200 transition canva-tap"
-                                title="Khóa cả 3 tab của giáo viên này"
+                                title="Khóa cả 4 tab của giáo viên này"
                               >
                                 Khóa hết
                               </button>
@@ -1157,8 +1229,12 @@ export function AdminDashboard() {
 
           {/* Snapshots List */}
           {isLoadingVault ? (
-            <div className="canva-card p-12 text-center text-xs text-neutral-400">
-              Đang tải dữ liệu kho đề thi từ máy chủ...
+            <div className="canva-card p-10 text-center rounded-3xl border border-neutral-200/90 dark:border-neutral-800">
+              <AzLogoLoader
+                size="md"
+                label="Đang đồng bộ dữ liệu kho đề thi..."
+                sublabel="Tải danh sách đề thi và lịch sử hoạt động từ máy chủ bảo mật"
+              />
             </div>
           ) : filteredSnapshots.length === 0 ? (
             <div className="canva-card p-12 text-center space-y-2 rounded-3xl border border-neutral-200/90 dark:border-neutral-800">
@@ -1343,15 +1419,12 @@ export function AdminDashboard() {
 
             <div>
               <label className="block font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                Google OAuth Client ID (Login Google):
+                Trạng Thái Bảo Mật &amp; Khóa Đăng Nhập Google:
               </label>
-              <input
-                type="text"
-                value={clientIdInput}
-                onChange={e => setClientIdInput(e.target.value)}
-                placeholder="xxx.apps.googleusercontent.com"
-                className="w-full p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-mono text-xs focus:ring-2 focus:ring-[#7d2ae8] outline-hidden"
-              />
+              <div className="w-full p-3 rounded-xl border border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Đã Ẩn &amp; Khóa Cứng 100% (Chống Lộ Key / Chống DDoS / Chống XSS)</span>
+              </div>
             </div>
 
             <div className="sm:col-span-2">
