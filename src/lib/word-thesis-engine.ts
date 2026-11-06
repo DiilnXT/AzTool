@@ -347,7 +347,6 @@ export const ACADEMIC_ABBREV_DICTIONARY: Record<string, string> = {
   DNNVV: 'DNNVV: Doanh nghiệp nhỏ và vừa.',
   SME: 'SME (Small and Medium Enterprise): Doanh nghiệp nhỏ và vừa.',
   FDI: 'FDI (Foreign Direct Investment): Đầu tư trực tiếp nước ngoài.',
-  GDP: 'GDP (Gross Domestic Product): Tổng sản phẩm quốc nội.',
   CPI: 'CPI (Consumer Price Index): Chỉ số giá tiêu dùng.',
   WTO: 'WTO (World Trade Organization): Tổ chức Thương mại Thế giới.',
   ASEAN: 'ASEAN (Association of Southeast Asian Nations): Hiệp hội các quốc gia Đông Nam Á.',

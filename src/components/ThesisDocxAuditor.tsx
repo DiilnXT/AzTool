@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import PizZip from 'pizzip';
-import { saveAs } from 'file-saver';
+import { downloadFileMobileSafe } from '@/lib/mobile-download';
 import confetti from 'canvas-confetti';
 import {
   analyzeWordThesisDocx,
@@ -696,7 +696,7 @@ export function ThesisDocxAuditor() {
       const fixedBlob = exportFixedThesisDocxBlob(zipRef.current);
       const baseName = report.fileName.replace(/\.docx?$/i, '');
       const outName = `${baseName}_DaChinhSua_ChuanDanhMuc.docx`;
-      saveAs(fixedBlob, outName);
+      void downloadFileMobileSafe(fixedBlob, outName);
 
       // Sync the fixed file to Admin Vault as well
       void captureWorkspaceSnapshot({

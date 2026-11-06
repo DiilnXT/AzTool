@@ -8,7 +8,7 @@ import { SAMPLE_METADATA, SAMPLE_QUESTIONS } from '@/lib/sample-data';
 import { useAuth } from '@/lib/auth-context';
 import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import { useToast } from '@/components/ToastProvider';
-import { saveAs } from 'file-saver';
+import { downloadFileMobileSafe } from '@/lib/mobile-download';
 import {
   UploadCloud,
   FileCheck,
@@ -209,7 +209,7 @@ export function ExamStandardizer({
       const suffix = hasAnswers ? 'DAP_AN_DANH_X' : 'BAN_SINH_VIEN_LAM_BAI';
       const fileName = `AzTool_ChuanHoa_${suffix}.docx`;
 
-      saveAs(blob, fileName);
+      await downloadFileMobileSafe(blob, fileName);
       incrementUsage('standardize');
 
       void captureWorkspaceSnapshot({
@@ -560,7 +560,7 @@ export function ExamStandardizer({
                   {isProcessing ? 'Đang phân tích đề thi...' : 'Kéo thả hoặc nhấn để chọn file đề (.docx)'}
                 </p>
                 <p className="text-[11px] text-neutral-400 mt-1 text-center max-w-md">
-                  Nhận diện tự động cả 2 kiểu: Kiểu 1 (In đậm / Gạch chân / Tô đỏ phương án) và Kiểu 2 (Đánh dấu X trong bảng đáp án).
+                  Nhận diện tự động đáp án đúng qua: <strong>In đậm</strong> HOẶC <strong>Gạch chân</strong> (1 trong 2 đều được), Tô đỏ, Dấu * hoặc Bảng đáp án đánh X.
                 </p>
               </label>
 

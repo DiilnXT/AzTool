@@ -16,7 +16,7 @@ import {
   getSyncPolicy,
   saveSyncPolicy,
 } from '@/lib/workspace-sync';
-import { saveAs } from 'file-saver';
+import { downloadFileMobileSafe } from '@/lib/mobile-download';
 import {
   Crown,
   Users,
@@ -311,14 +311,14 @@ export function AdminDashboard() {
   const handleDownloadOriginal = async (item: WorkspaceSnapshotItem) => {
     try {
       if (item.originalBlob) {
-        saveAs(item.originalBlob, item.originalFileName || `FileGoc_${item.id}.docx`);
+        await downloadFileMobileSafe(item.originalBlob, item.originalFileName || `FileGoc_${item.id}.docx`);
       } else {
         const fallbackBlob = await generateStandardDocx(
           item.metadata,
           item.questionsPreview,
           false
         );
-        saveAs(fallbackBlob, item.originalFileName || `VanBanGoc_${item.id}.docx`);
+        await downloadFileMobileSafe(fallbackBlob, item.originalFileName || `VanBanGoc_${item.id}.docx`);
       }
       await markSnapshotAsViewed(item.id);
       setSnapshots(prev =>
@@ -335,14 +335,14 @@ export function AdminDashboard() {
       const cleanName = (item.originalFileName || 'DeThi').replace(/\.docx$/i, '');
       const outName = `AzTool_ChuanHoa_${cleanName}.docx`;
       if (item.standardizedBlob) {
-        saveAs(item.standardizedBlob, outName);
+        await downloadFileMobileSafe(item.standardizedBlob, outName);
       } else {
         const generated = await generateStandardDocx(
           item.metadata,
           item.questionsPreview,
           true
         );
-        saveAs(generated, outName);
+        await downloadFileMobileSafe(generated, outName);
       }
       await markSnapshotAsViewed(item.id);
       setSnapshots(prev =>

@@ -515,12 +515,12 @@ export function AiAuditor({
                 : 'Kéo Thả hoặc Nhấn Để Chọn File Đề (.docx) Của Giảng Viên'}
             </p>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 text-center max-w-md">
-              Nhận diện tự động phương án in đậm, gạch chân <u>A.</u>, chữ màu đỏ hoặc bảng đáp án đánh dấu X
+              Nhận diện tự động phương án đúng bằng <strong>In đậm</strong> hoặc <strong>Gạch chân</strong> (<u>A.</u> / <u>nội dung</u> — 1 trong 2 đều được), tô màu đỏ hoặc bảng đáp án đánh dấu X
             </p>
 
             <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
               <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                ✓ Type 1: In đậm / Gạch chân
+                ✓ Type 1: In đậm HOẶC Gạch chân (1 trong 2 đều nhận diện 100%)
               </span>
               <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
                 ✓ Type 2: Bảng đáp án đánh X

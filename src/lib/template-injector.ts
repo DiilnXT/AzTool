@@ -85,7 +85,114 @@ export async function injectIntoTemplateDocx(
   }
 
   zipContent.file('word/document.xml', docXml);
-  return await zipContent.generateAsync({ type: 'blob' });
+  return await zipContent.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    compression: 'DEFLATE',
+  });
+}
+
+/**
+ * Generates a single combined Word (.docx) document containing all mixed exam codes
+ * separated by page breaks (<w:br w:type="page"/>) so mobile & desktop users can
+ * open all mixed exam codes directly in Microsoft Word without unzipping a .zip archive!
+ */
+export async function injectMultipleExamsIntoSingleDocx(
+  templateBuffer: ArrayBuffer | Uint8Array,
+  metadata: ExamMetadata,
+  exams: { code: string; questions: Question[] }[],
+  hasAnswers: boolean = false
+): Promise<Blob> {
+  if (exams.length === 0) {
+    throw new Error('Không có mã đề nào để xuất');
+  }
+  if (exams.length === 1) {
+    return injectIntoTemplateDocx(templateBuffer, metadata, exams[0].questions, hasAnswers, exams[0].code);
+  }
+
+  const zip = new JSZip();
+  const zipContent = await zip.loadAsync(templateBuffer);
+  const docXmlFile = zipContent.file('word/document.xml');
+  if (!docXmlFile) {
+    throw new Error('Template không hợp lệ (không tìm thấy word/document.xml)');
+  }
+
+  const baseDocXml = await docXmlFile.async('text');
+  const bodyStartMatch = baseDocXml.match(/<w:body[^>]*>/);
+  const bodyEndIdx = baseDocXml.lastIndexOf('</w:body>');
+  if (!bodyStartMatch || bodyStartMatch.index === undefined || bodyEndIdx === -1) {
+    return injectIntoTemplateDocx(templateBuffer, metadata, exams[0].questions, hasAnswers, exams[0].code);
+  }
+
+  const bodyInnerStart = bodyStartMatch.index + bodyStartMatch[0].length;
+  const rawBodyInner = baseDocXml.substring(bodyInnerStart, bodyEndIdx);
+
+  // Extract trailing <w:sectPr> if present so page margins/size remain intact at the end of document
+  const sectPrMatch = rawBodyInner.match(/<w:sectPr[\s\S]*?<\/w:sectPr>\s*$/);
+  const sectPrXml = sectPrMatch ? sectPrMatch[0] : '';
+  const singleExamBodyTemplate = sectPrMatch
+    ? rawBodyInner.substring(0, sectPrMatch.index)
+    : rawBodyInner;
+
+  const renderedExamSections: string[] = [];
+
+  for (let i = 0; i < exams.length; i++) {
+    const ex = exams[i];
+    let sectionXml = singleExamBodyTemplate;
+    const cleanCode = escapeXml(ex.code);
+
+    sectionXml = sectionXml.replace(
+      /(<w:t xml:space="preserve">Đề Số: <\/w:t>[\s\S]*?<w:t>)\.\.(<\/w:t>)/,
+      `$1${cleanCode}$2`
+    );
+    sectionXml = sectionXml.replace(
+      /<w:t>Đề số:[^<]*<\/w:t>/,
+      `<w:t>Đề số: ${cleanCode}</w:t>`
+    );
+
+    const tblRegex = /<w:tbl[\s\S]*?<\/w:tbl>/g;
+    const tblMatches = [...sectionXml.matchAll(tblRegex)];
+    if (tblMatches.length >= 2) {
+      const table1Match = tblMatches[1];
+      const table1Original = table1Match[0];
+      const table1Start = table1Match.index!;
+      const table1End = table1Start + table1Original.length;
+      const updatedTable1 = updateAnswerSheetTableXml(table1Original, ex.questions, hasAnswers);
+      sectionXml =
+        sectionXml.substring(0, table1Start) + updatedTable1 + sectionXml.substring(table1End);
+    }
+
+    const noiDungIdx = sectionXml.indexOf('Nội dung đề');
+    const hetIdx = sectionXml.indexOf('-----Hết-----');
+    if (noiDungIdx !== -1 && hetIdx !== -1 && hetIdx > noiDungIdx) {
+      const pEndAfterNoiDung = sectionXml.indexOf('</w:p>', noiDungIdx) + 6;
+      const pMatches = [...sectionXml.substring(0, hetIdx).matchAll(/<w:p[\s>]/g)];
+      if (pMatches.length > 0) {
+        const pStartBeforeHet = pMatches[pMatches.length - 1].index!;
+        if (pEndAfterNoiDung !== -1 && pStartBeforeHet !== -1 && pStartBeforeHet > pEndAfterNoiDung) {
+          const questionsXml = generateQuestionsXml(ex.questions);
+          sectionXml =
+            sectionXml.substring(0, pEndAfterNoiDung) +
+            questionsXml +
+            sectionXml.substring(pStartBeforeHet);
+        }
+      }
+    }
+
+    renderedExamSections.push(sectionXml);
+  }
+
+  const pageBreakXml = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+  const combinedBodyInner = renderedExamSections.join(pageBreakXml) + sectPrXml;
+  const finalDocXml =
+    baseDocXml.substring(0, bodyInnerStart) + combinedBodyInner + baseDocXml.substring(bodyEndIdx);
+
+  zipContent.file('word/document.xml', finalDocXml);
+  return await zipContent.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    compression: 'DEFLATE',
+  });
 }
 
 function updateAnswerSheetTableXml(

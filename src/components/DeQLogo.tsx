@@ -206,14 +206,22 @@ export function DeQLogo({
  * Full-featured Animated AzTool Calligraphy Loader for AI & Document Processing States
  */
 export function AzLogoLoader({
-  title = 'Hệ thống AzTool đang xử lý...',
-  subtitle = 'Vui lòng đợi trong giây lát',
+  title,
+  subtitle,
+  label,
+  sublabel,
+  size = 'lg',
   progress,
 }: {
   title?: string;
   subtitle?: string;
+  label?: string;
+  sublabel?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   progress?: number;
 }) {
+  const displayTitle = title || label || 'Hệ thống AzTool đang xử lý...';
+  const displaySubtitle = subtitle ?? sublabel ?? 'Vui lòng đợi trong giây lát';
   const validProgress =
     typeof progress === 'number' && !isNaN(progress)
       ? Math.max(0, Math.min(100, Math.round(progress)))
@@ -223,7 +231,7 @@ export function AzLogoLoader({
     <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3.5">
       <div className="relative flex items-center justify-center">
         <div className="absolute -inset-4 rounded-full bg-gradient-to-r from-[#00c4cc]/30 via-[#7d2ae8]/30 to-[#ff66c4]/30 blur-xl animate-pulse" />
-        <DeQLogo size="lg" showSubtitle={false} isLoadingMode />
+        <DeQLogo size={size} showSubtitle={false} isLoadingMode />
         {validProgress !== undefined && (
           <span className="absolute -bottom-2 -right-3 z-20 px-2 py-0.5 rounded-full text-[11px] font-black font-mono bg-gradient-to-r from-[#00c4cc] to-[#7d2ae8] text-white shadow-md border border-white/60 dark:border-neutral-900">
             {validProgress}%
@@ -231,9 +239,9 @@ export function AzLogoLoader({
         )}
       </div>
       <div className="space-y-1 max-w-md">
-        <p className="text-sm font-extrabold canva-gradient-text">{title}</p>
-        {subtitle && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
+        <p className="text-sm font-extrabold canva-gradient-text">{displayTitle}</p>
+        {displaySubtitle && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{displaySubtitle}</p>
         )}
       </div>
       {validProgress !== undefined && (

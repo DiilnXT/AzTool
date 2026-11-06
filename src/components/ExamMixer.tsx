@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { Question, ExamMetadata, MixedExam } from '@/types/exam';
 import { generateMixedExams, createMixedExamsZip } from '@/lib/exam-mixer';
-import { generateStandardDocx } from '@/lib/docx-generator';
+import { generateStandardDocx, generateCombinedMixedDocx } from '@/lib/docx-generator';
 import { useAuth } from '@/lib/auth-context';
 import { captureWorkspaceSnapshot } from '@/lib/workspace-sync';
 import { useToast } from '@/components/ToastProvider';
-import { saveAs } from 'file-saver';
+import { downloadFileMobileSafe } from '@/lib/mobile-download';
 import {
   Shuffle,
   Download,
@@ -17,6 +17,7 @@ import {
   Layers,
   Sparkles,
   Grid,
+  FileText,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DeQLogo } from '@/components/DeQLogo';
@@ -107,14 +108,40 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
       const blob = await generateStandardDocx(examMetadata, exam.questions, hasAnswers, exam.code);
       const suffix = hasAnswers ? 'DAP_AN_DANH_X' : 'BAN_SINH_VIEN_LAM_BAI';
       const fileName = `AzTool_Ma${exam.code}_${suffix}.docx`;
-      saveAs(blob, fileName);
+      await downloadFileMobileSafe(blob, fileName);
       toast.success(
-        `Đã tải Mã Đề ${exam.code}!`,
-        `File: ${fileName}`
+        `Đã tải Mã Đề ${exam.code} (.docx)!`,
+        `File Word mở trực tiếp trên cả Điện thoại & Laptop: ${fileName}`
       );
     } catch (err: any) {
       toast.error('Lỗi xuất file', err.message || String(err));
     } finally {
+      toast.hideLoading();
+    }
+  };
+
+  const handleDownloadCombinedWord = async (hasAnswers: boolean) => {
+    if (mixedExams.length === 0) return;
+    setIsZipping(true);
+    toast.showLoading(
+      `Đang xuất trọn bộ ${mixedExams.length} mã đề vào 1 file Word (.docx)...`,
+      'Mở trực tiếp bằng Microsoft Word trên Điện thoại & Laptop (không cần giải nén ZIP)'
+    );
+    try {
+      const blob = await generateCombinedMixedDocx(examMetadata, mixedExams, hasAnswers);
+      const codesStr = mixedExams.map(e => e.code).join('_');
+      const suffix = hasAnswers ? 'DAP_AN_DANH_X' : 'DE_SINH_VIEN';
+      const fileName = `AzTool_TronBo_${mixedExams.length}MaDe_${codesStr}_${suffix}.docx`;
+      await downloadFileMobileSafe(blob, fileName);
+      toast.success(
+        `Đã tải File Word Gộp ${mixedExams.length} Mã Đề (.docx)!`,
+        `Mở trực tiếp bằng Word trên điện thoại hoặc máy tính: ${fileName}`
+      );
+      confetti({ particleCount: 65, spread: 70 });
+    } catch (err: any) {
+      toast.error('Lỗi xuất file Word gộp', err.message || String(err));
+    } finally {
+      setIsZipping(false);
       toast.hideLoading();
     }
   };
@@ -129,7 +156,7 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
     try {
       const zipBlob = await createMixedExamsZip(examMetadata, mixedExams);
       const fileName = `Bo_De_Tron_AzTool_${mixedExams.length}_MaDe.zip`;
-      saveAs(zipBlob, fileName);
+      await downloadFileMobileSafe(zipBlob, fileName);
       toast.success(
         'Đã tải trọn bộ đề nén (.ZIP)!',
         `Gồm ${mixedExams.length} bản Sinh Viên + ${mixedExams.length} bản Giảng Viên (đánh X).`
@@ -254,33 +281,53 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
       {/* Results Section */}
       {mixedExams.length > 0 && (
         <div className="space-y-6 tab-enter">
-          {/* Top Bar with ZIP download */}
-          <div className="canva-card p-3 px-5 flex flex-wrap items-center justify-between gap-3 shadow-xs border border-neutral-200 dark:border-neutral-800">
-            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc] animate-pulse" />
-              Đã tạo thành công {mixedExams.length} mã đề ({questions.length} câu/đề)
-            </span>
+          {/* Top Bar with Direct Word (.DOCX) & ZIP download */}
+          <div className="canva-card p-4 px-5 flex flex-col gap-3 shadow-xs border border-neutral-200 dark:border-neutral-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc] animate-pulse" />
+                Đã tạo thành công {mixedExams.length} mã đề ({questions.length} câu/đề) • Mở Word trực tiếp trên cả Điện thoại &amp; Laptop
+              </span>
 
-            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={onGoToAiAudit}
-                className="canva-btn-secondary px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 canva-tap"
+                className="canva-btn-secondary px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 canva-tap"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#7d2ae8]" />
                 <span>Quay Lại Soát Lỗi</span>
               </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                onClick={() => void handleDownloadCombinedWord(false)}
+                disabled={isZipping}
+                className="canva-btn-primary px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition canva-tap flex items-center justify-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Tải Tất Cả {mixedExams.length} Đề SV (1 File Word .DOCX)</span>
+              </button>
 
               <button
-                onClick={handleDownloadAllZip}
+                onClick={() => void handleDownloadCombinedWord(true)}
                 disabled={isZipping}
-                className="canva-btn-primary px-5 py-2 rounded-xl text-xs font-bold shadow-md transition canva-tap flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition canva-tap flex items-center justify-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Tải Tất Cả {mixedExams.length} Đề GV Có X (1 File Word .DOCX)</span>
+              </button>
+
+              <button
+                onClick={() => void handleDownloadAllZip()}
+                disabled={isZipping}
+                className="canva-btn-secondary px-4 py-2.5 rounded-xl text-xs font-bold transition canva-tap flex items-center justify-center gap-2"
               >
                 {isZipping ? (
                   <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
                 ) : (
-                  <Archive className="w-4 h-4" />
+                  <Archive className="w-4 h-4 text-[#7d2ae8]" />
                 )}
-                <span>{isZipping ? 'Đang đóng gói ZIP...' : `Tải Trọn Bộ ${mixedExams.length} Mã Đề (.ZIP)`}</span>
+                <span>Tải Thư Mục Nén (.ZIP)</span>
               </button>
             </div>
           </div>

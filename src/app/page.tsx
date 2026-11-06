@@ -179,9 +179,9 @@ function MainApp() {
     },
     {
       id: 'pdf-studio' as const,
-      step: 'CẮT PDF & AI OCR EXCEL',
-      title: 'Cắt PDF & OCR Excel',
-      desc: 'Cắt trang PDF & Ảnh/Scan ➔ Excel',
+      step: 'CẮT & TÁCH TRANG PDF',
+      title: 'Cắt & Tách PDF',
+      desc: 'Cắt theo trang Setting • Xoay • Xóa',
       icon: FileSpreadsheet,
       gradient: 'from-rose-500 via-orange-500 to-amber-500',
       activeRing: 'ring-rose-500 border-rose-500 bg-rose-50/60 dark:bg-rose-950/30',
@@ -477,7 +477,7 @@ function MainApp() {
               <PdfOfficeStudio />
             ) : (
               <TabLockedView
-                tabTitle="PDF & Office Studio (20 Công Cụ Chuyển Đổi PDF/Word/Excel & Xử Lý Đồ Họa AI)"
+                tabTitle="Cắt & Tách Trang PDF Theo Trang Setting"
                 onGoToGuide={() => setActiveTab('guide')}
               />
             ))}

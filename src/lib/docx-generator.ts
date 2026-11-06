@@ -1,5 +1,5 @@
 import { Question, ExamMetadata } from '@/types/exam';
-import { injectIntoTemplateDocx } from './template-injector';
+import { injectIntoTemplateDocx, injectMultipleExamsIntoSingleDocx } from './template-injector';
 
 let cachedTemplateBuffer: ArrayBuffer | null = null;
 
@@ -57,4 +57,18 @@ export async function generateStandardDocx(
     hasAnswers,
     customExamCode
   );
+}
+
+/**
+ * Generate a single combined Word (.docx) document containing all mixed exam codes
+ * so teachers on mobile phones can open all mixed exams directly in Microsoft Word
+ * without needing to extract a .zip file.
+ */
+export async function generateCombinedMixedDocx(
+  metadata: ExamMetadata,
+  exams: { code: string; questions: Question[] }[],
+  hasAnswers: boolean = false
+): Promise<Blob> {
+  const templateBuffer = await getOfficialTemplateBuffer();
+  return await injectMultipleExamsIntoSingleDocx(templateBuffer, metadata, exams, hasAnswers);
 }

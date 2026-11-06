@@ -267,26 +267,67 @@ interface SplitOptionItem {
   hasAsterisk: boolean;
   isRed: boolean;
   contentBold: boolean;
+  contentUnderline: boolean;
+  prefixBold: boolean;
+  prefixUnderline: boolean;
 }
 
 /**
  * Splits a line into 1 or more options if multiple options are placed horizontally on one line
  * (e.g. "A. Lựa chọn 1    B. Lựa chọn 2    C. Lựa chọn 3    D. Lựa chọn 4")
+ * Supports both Bold (In đậm) and Underline (Gạch chân) — 1 trong 2 đều được!
  */
 function splitLineIntoOptions(lineObj: ParsedLine): SplitOptionItem[] {
-  const text = (lineObj.text || '').trim();
-  const optionRegex = /(?:^|\s{2,}|\t)(?:[-*•~]?\s*(?:\*\*)?(?:\[|\()?\s*([A-D])\s*(?:\]|\))?[\s.):\/*-]+(?:\*\*)?)/gi;
-  
-  const matches: { index: number; length: number; label: 'A' | 'B' | 'C' | 'D' }[] = [];
+  const text = lineObj.text || '';
+  if (!text.trim()) return [];
+
+  // Primary regex: start of line or 2+ spaces/tabs before A., B., C., D.
+  const optionRegex = /(?:^|\s{2,}|\t)(\s*)(?:[-*•~]?\s*(?:\*\*)?(?:\[|\()?\s*([A-D])\s*(?:\]|\))?[\s.):\/*-]+(?:\*\*)?)/gi;
+
+  const matches: {
+    optStart: number;
+    prefixEnd: number;
+    label: 'A' | 'B' | 'C' | 'D';
+  }[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = optionRegex.exec(text)) !== null) {
-    const label = match[1].toUpperCase() as 'A' | 'B' | 'C' | 'D';
+    const label = match[2].toUpperCase() as 'A' | 'B' | 'C' | 'D';
+    const fullMatchStr = match[0];
+    // Find exact index where the option marker (*, [, (, or A-D) begins, skipping leading spaces
+    const leadingWsMatch = fullMatchStr.match(/^\s*/);
+    const leadingWsLen = leadingWsMatch ? leadingWsMatch[0].length : 0;
+    const optStart = match.index + leadingWsLen;
+    const prefixEnd = match.index + fullMatchStr.length;
+
     matches.push({
-      index: match.index,
-      length: match[0].length,
+      optStart,
+      prefixEnd,
       label,
     });
+  }
+
+  // Fallback for single-space separated horizontal options (e.g. "A. Đáp án 1 B. Đáp án 2 C. Đáp án 3 D. Đáp án 4")
+  if (matches.length === 1 && matches[0].label === 'A') {
+    const singleSpaceRegex = /(?:^|\s+)(\*?([A-D])[.):]\s+)/g;
+    const altMatches: typeof matches = [];
+    let m2: RegExpExecArray | null;
+    const expectedOrder = ['A', 'B', 'C', 'D'];
+    while ((m2 = singleSpaceRegex.exec(text)) !== null) {
+      const lbl = m2[2].toUpperCase() as 'A' | 'B' | 'C' | 'D';
+      if (lbl === expectedOrder[altMatches.length]) {
+        const leadWs = m2[0].match(/^\s*/)?.[0].length || 0;
+        altMatches.push({
+          optStart: m2.index + leadWs,
+          prefixEnd: m2.index + m2[0].length,
+          label: lbl,
+        });
+      }
+    }
+    if (altMatches.length >= 2) {
+      matches.length = 0;
+      matches.push(...altMatches);
+    }
   }
 
   if (matches.length === 0) return [];
@@ -295,37 +336,65 @@ function splitLineIntoOptions(lineObj: ParsedLine): SplitOptionItem[] {
 
   for (let i = 0; i < matches.length; i++) {
     const cur = matches[i];
-    const nextStart = i + 1 < matches.length ? matches[i + 1].index : text.length;
-    const content = cleanText(text.substring(cur.index + cur.length, nextStart));
-    const optFullText = text.substring(cur.index, nextStart);
+    const nextStart = i + 1 < matches.length ? matches[i + 1].optStart : text.length;
+    const content = cleanText(text.substring(cur.prefixEnd, nextStart));
+    const optFullText = text.substring(cur.optStart, nextStart).trim();
 
-    // Analyze segments for this range
+    // Analyze segments strictly on non-whitespace characters belonging to this option
+    // so trailing underlined/bolded spaces never bleed into the next option!
     let charPos = 0;
     let isBold = false;
     let isUnderline = false;
     let isRed = false;
     let contentBold = false;
+    let contentUnderline = false;
+    let prefixBold = false;
+    let prefixUnderline = false;
 
     for (const seg of lineObj.segments) {
       const segStart = charPos;
       const segEnd = charPos + seg.text.length;
       charPos = segEnd;
 
-      // Overlaps with option range?
-      if (segEnd > cur.index && segStart < nextStart) {
-        if (seg.bold) isBold = true;
-        if (seg.underline) isUnderline = true;
-        if (seg.color === 'red') isRed = true;
+      // Overlap with the entire option [cur.optStart, nextStart)
+      const ovStart = Math.max(segStart, cur.optStart);
+      const ovEnd = Math.min(segEnd, nextStart);
+      if (ovEnd > ovStart) {
+        const ovText = text.substring(ovStart, ovEnd).trim();
+        if (ovText.length > 0) {
+          if (seg.bold) isBold = true;
+          if (seg.underline) isUnderline = true;
+          if (seg.color === 'red') isRed = true;
+        }
+      }
 
-        // Content bold (after option prefix)
-        const prefixEnd = cur.index + cur.length;
-        if (segEnd > prefixEnd && seg.bold && seg.text.trim().length > 0) {
-          contentBold = true;
+      // Overlap with the option prefix [cur.optStart, cur.prefixEnd) (e.g. "A.")
+      const prefOvStart = Math.max(segStart, cur.optStart);
+      const prefOvEnd = Math.min(segEnd, cur.prefixEnd);
+      if (prefOvEnd > prefOvStart) {
+        const prefOvText = text.substring(prefOvStart, prefOvEnd).trim();
+        if (prefOvText.length > 0) {
+          if (seg.bold) prefixBold = true;
+          if (seg.underline) prefixUnderline = true;
+        }
+      }
+
+      // Overlap with the option content [cur.prefixEnd, nextStart)
+      const contOvStart = Math.max(segStart, cur.prefixEnd);
+      const contOvEnd = Math.min(segEnd, nextStart);
+      if (contOvEnd > contOvStart) {
+        const contOvText = text.substring(contOvStart, contOvEnd).trim();
+        if (contOvText.length > 0) {
+          if (seg.bold) contentBold = true;
+          if (seg.underline) contentUnderline = true;
         }
       }
     }
 
-    const hasAsterisk = optFullText.startsWith('*') || optFullText.includes('*' + cur.label);
+    const hasAsterisk =
+      optFullText.startsWith('*') ||
+      optFullText.includes('*' + cur.label) ||
+      optFullText.startsWith(cur.label + '*');
 
     results.push({
       label: cur.label,
@@ -335,6 +404,9 @@ function splitLineIntoOptions(lineObj: ParsedLine): SplitOptionItem[] {
       hasAsterisk,
       isRed,
       contentBold,
+      contentUnderline,
+      prefixBold,
+      prefixUnderline,
     });
   }
 
@@ -369,20 +441,35 @@ function extractQuestionsFromLines(
       detectedAns = answerMap[qNum];
     }
 
-    // 2. Check Type 1: In-line Asterisk rule (*A. or [x])
+    // 2. Check Type 1: In-line Asterisk rule (*A. or A.*)
     if (!detectedAns) {
       const astKey = optKeys.find(k => attrs[k]?.hasAsterisk);
       if (astKey) detectedAns = astKey;
     }
 
-    // 3. Check Type 1: In-line Red color rule
+    // 3. Check Type 1: In-line Red / Highlight rule
     if (!detectedAns) {
       const redKeys = optKeys.filter(k => attrs[k]?.isRed);
       if (redKeys.length === 1) detectedAns = redKeys[0];
     }
 
-    // 4. Check Type 1: In-line Content Bold rule
-    // (If only 1 option has its content text bolded, that is 100% the teacher's answer!)
+    // 4. Check Type 1: GẠCH CHÂN (Underline: <u>A.</u> hoặc A. <u>Nội dung</u> hoặc <u>A. Nội dung</u>)
+    if (!detectedAns) {
+      const uKeys = optKeys.filter(k => attrs[k]?.isUnderline);
+      if (uKeys.length === 1) {
+        detectedAns = uKeys[0];
+      } else if (uKeys.length > 1) {
+        const contUKeys = optKeys.filter(k => attrs[k]?.contentUnderline);
+        if (contUKeys.length === 1) {
+          detectedAns = contUKeys[0];
+        } else {
+          const prefUKeys = optKeys.filter(k => attrs[k]?.prefixUnderline);
+          if (prefUKeys.length === 1) detectedAns = prefUKeys[0];
+        }
+      }
+    }
+
+    // 5. Check Type 1: IN ĐẬM PHẦN NỘI DUNG (Content Bold: A. <b>Nội dung</b> hoặc <b>A. Nội dung</b> khi B., C., D. chỉ in đậm chữ cái đầu)
     if (!detectedAns) {
       const contentBoldKeys = optKeys.filter(k => attrs[k]?.contentBold);
       if (contentBoldKeys.length === 1) {
@@ -390,21 +477,19 @@ function extractQuestionsFromLines(
       }
     }
 
-    // 5. Check Type 1: In-line Underline rule (<u>A.</u>)
-    if (!detectedAns) {
-      const uKeys = optKeys.filter(k => attrs[k]?.isUnderline);
-      if (uKeys.length === 1) detectedAns = uKeys[0];
-    }
-
-    // 6. Check Type 1: In-line Option Bold rule
+    // 6. Check Type 1: IN ĐẬM CHỮ CÁI ĐẦU HOẶC TOÀN PHƯƠNG ÁN (Option Bold: <b>A.</b> Nội dung khi B., C., D. không in đậm)
     if (!detectedAns) {
       const boldKeys = optKeys.filter(k => attrs[k]?.isBold);
       if (boldKeys.length === 1) {
         detectedAns = boldKeys[0];
       } else if (boldKeys.length > 1 && boldKeys.length < 4) {
-        // If multiple are bold, see if one also has underline
-        const uInBold = boldKeys.filter(k => attrs[k]?.isUnderline);
-        if (uInBold.length === 1) detectedAns = uInBold[0];
+        const prefBoldKeys = optKeys.filter(k => attrs[k]?.prefixBold);
+        if (prefBoldKeys.length === 1) {
+          detectedAns = prefBoldKeys[0];
+        } else {
+          const uInBold = boldKeys.filter(k => attrs[k]?.isUnderline);
+          if (uInBold.length === 1) detectedAns = uInBold[0];
+        }
       }
     }
 
@@ -463,7 +548,26 @@ function extractQuestionsFromLines(
           currentQ!.optAttrs[opt.label] = opt;
         });
       } else if (currentQ.currentOptLabel) {
-        currentQ.options[currentQ.currentOptLabel] += ' ' + text;
+        const lbl = currentQ.currentOptLabel;
+        currentQ.options[lbl] += ' ' + text;
+        const existingAttr = currentQ.optAttrs[lbl];
+        if (existingAttr) {
+          for (const seg of line.segments) {
+            if (seg.text.trim().length > 0) {
+              if (seg.bold) {
+                existingAttr.isBold = true;
+                existingAttr.contentBold = true;
+              }
+              if (seg.underline) {
+                existingAttr.isUnderline = true;
+                existingAttr.contentUnderline = true;
+              }
+              if (seg.color === 'red') {
+                existingAttr.isRed = true;
+              }
+            }
+          }
+        }
       } else {
         currentQ.textParts.push(text);
       }
