@@ -1,20 +1,49 @@
 import { Question, QuestionAuditError } from '@/types/exam';
 
-export const DEFAULT_MODEL_ID = 'gemini-1.5-flash';
+export const DEFAULT_MODEL_ID = 'gemini-2.0-flash';
 
 export const POPULAR_GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Cực Kỳ Ổn Định - Khuyên Dùng)', tag: 'Mặc Định' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Tốc Độ Cao - Thế Hệ Mới)', tag: 'Nhanh' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tag: 'Mới' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Tốc Độ Cao - Khuyên Dùng)', tag: 'Mặc Định' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Thế Hệ Mới - Siêu Chuẩn)', tag: 'Mới' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Dự Phòng Ổn Định)', tag: 'Ổn Định' },
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Suy Luận Cao Cấp)', tag: 'Pro' },
 ];
 
 export function getAvailableKeys(apiKeysStr?: string): string[] {
-  if (!apiKeysStr) return [];
-  return apiKeysStr
-    .split(',')
-    .map(k => k.trim())
-    .filter(k => k.length > 10);
+  let rawPool = apiKeysStr || '';
+
+  if (!rawPool.trim() && typeof window !== 'undefined') {
+    try {
+      const fromUser = localStorage.getItem('aztool_current_user');
+      if (fromUser) {
+        const parsedU = JSON.parse(fromUser);
+        if (parsedU?.customApiKey) rawPool += ',' + parsedU.customApiKey;
+      }
+      const fromSys = localStorage.getItem('aztool_system_config');
+      if (fromSys) {
+        const parsedS = JSON.parse(fromSys);
+        if (parsedS?.defaultGeminiApiKey) rawPool += ',' + parsedS.defaultGeminiApiKey;
+      }
+      const fromLegacy = localStorage.getItem('deq_gemini_keys');
+      if (fromLegacy) rawPool += ',' + fromLegacy;
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GEMINI_API_KEY) {
+    rawPool += ',' + process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  }
+
+  if (!rawPool) return [];
+  return Array.from(
+    new Set(
+      rawPool
+        .split(/[,;\n]+/)
+        .map(k => k.trim())
+        .filter(k => k.length > 10)
+    )
+  );
 }
 
 /**
@@ -390,54 +419,63 @@ export async function callGeminiVisionApi(
     ? base64Image.split(',')[1]
     : base64Image;
 
-  const requestedModel = modelId && modelId.trim() ? modelId.trim() : 'gemini-2.0-flash';
-  const modelsToTry = [requestedModel, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+  const requestedModel = modelId && modelId.trim() ? modelId.trim() : 'gemini-2.5-flash';
+  const modelsToTry = [requestedModel, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   const uniqueModels = Array.from(new Set(modelsToTry));
   const shuffledKeys = [...keys].sort(() => Math.random() - 0.5);
 
   let lastError: any = null;
   for (const activeModel of uniqueModels) {
     for (const key of shuffledKeys) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`;
-        const body = {
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: cleanBase64,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
+      for (const useJsonMime of [true, false]) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`;
+          const generationConfig: any = {
             temperature: 0.1,
             maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-          },
-        };
+          };
+          if (useJsonMime) {
+            generationConfig.responseMimeType = 'application/json';
+          }
 
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+          const body = {
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: cleanBase64,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig,
+          };
 
-        if (!res.ok) {
-          if (res.status === 429) continue;
-          break;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+
+          if (!res.ok) {
+            if (res.status === 400 && useJsonMime) {
+              continue; // Retry same key/model without responseMimeType
+            }
+            if (res.status === 429) break; // Try next key
+            break; // Try next model
+          }
+
+          const data = await res.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) return text;
+        } catch (err) {
+          lastError = err;
         }
-
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text;
-      } catch (err) {
-        lastError = err;
       }
     }
   }

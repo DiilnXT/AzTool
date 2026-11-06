@@ -58,18 +58,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setDisplayNameInput('');
     }
 
-    if (isSuperAdmin) {
-      if (user?.customApiKey) {
-        setApiKeyInput(user.customApiKey);
-      } else if (systemConfig.defaultGeminiApiKey) {
-        setApiKeyInput(systemConfig.defaultGeminiApiKey);
-      }
+    if (user?.customApiKey) {
+      setApiKeyInput(user.customApiKey);
+    } else if (systemConfig.defaultGeminiApiKey) {
+      setApiKeyInput(systemConfig.defaultGeminiApiKey);
+    } else if (typeof window !== 'undefined') {
+      const savedLocal = localStorage.getItem('deq_gemini_keys');
+      if (savedLocal) setApiKeyInput(savedLocal);
+    }
 
-      if (user?.customModelId) {
-        setModelIdInput(user.customModelId);
-      } else if (systemConfig.defaultGeminiModel) {
-        setModelIdInput(systemConfig.defaultGeminiModel);
-      }
+    if (user?.customModelId) {
+      setModelIdInput(user.customModelId);
+    } else if (systemConfig.defaultGeminiModel) {
+      setModelIdInput(systemConfig.defaultGeminiModel);
     }
   }, [user, systemConfig, isSuperAdmin, isOpen]);
 
@@ -82,13 +83,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       updateDisplayName(displayNameInput.trim());
     }
 
+    const trimmedModel = modelIdInput.trim() || DEFAULT_MODEL_ID;
+    const trimmedKeys = apiKeyInput.trim();
+
+    if (trimmedKeys && typeof window !== 'undefined') {
+      localStorage.setItem('deq_gemini_keys', trimmedKeys);
+    }
+    saveUserApiKey(trimmedKeys);
+    saveUserGeminiModel(trimmedModel);
+
     if (isSuperAdmin) {
-      const trimmedModel = modelIdInput.trim() || DEFAULT_MODEL_ID;
-      const trimmedKeys = apiKeyInput.trim();
-
-      saveUserApiKey(trimmedKeys);
-      saveUserGeminiModel(trimmedModel);
-
       updateSystemConfig({
         defaultGeminiApiKey: trimmedKeys,
         defaultGeminiModel: trimmedModel,
@@ -100,8 +104,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       );
     } else {
       toast.success(
-        'Đã lưu tùy chỉnh cá nhân!',
-        `Tên hiển thị và chế độ giao diện (${theme === 'dark' ? 'Tối' : 'Sáng'}) đã được cập nhật.`
+        'Đã lưu tùy chỉnh cá nhân & AI OCR!',
+        `Model: ${trimmedModel} • ${detectedKeys.length > 0 ? `${detectedKeys.length} API Key sẵn sàng` : 'Dùng Engine OCR nội bộ'}.`
       );
     }
 
@@ -110,7 +114,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleTestConnection = async () => {
-    if (!isSuperAdmin) return;
     if (detectedKeys.length === 0) {
       setTestingStatus('error');
       setTestMessage('Vui lòng nhập ít nhất 1 API key Gemini hợp lệ.');
@@ -233,12 +236,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           </div>
 
-          {/* 3. ADMIN-ONLY AI ENGINE SETTINGS (Google OAuth Key is permanently vaulted & hidden!) */}
-          {isSuperAdmin && (
+          {/* 3. AI VISION OCR & GEMINI API ENGINE SETTINGS (Available to all users) */}
+          {(true || isSuperAdmin) && (
             <div className="space-y-4 pt-4 mt-2 border-t border-neutral-200 dark:border-neutral-800">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 text-[10px] font-bold">
                 <Cpu className="w-3 h-3" />
-                <span>Cấu Hình AI Dành Riêng Cho Quản Trị Viên</span>
+                <span>Cấu Hình AI Vision OCR &amp; Gemini API</span>
               </div>
 
               <div className="space-y-2">

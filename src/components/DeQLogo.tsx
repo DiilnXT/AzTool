@@ -1,227 +1,254 @@
 'use client';
 
-import React, { useId } from 'react';
+import React from 'react';
 
-interface AzToolLogoProps {
+interface DeQLogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showSubtitle?: boolean;
-  lightText?: boolean;
   isLoadingMode?: boolean;
 }
 
 export function DeQLogo({
   size = 'md',
   showSubtitle = true,
-  lightText = false,
   isLoadingMode = false,
-}: AzToolLogoProps) {
-  const uid = useId().replace(/:/g, '');
-  const gradId = `azCalligraphyGrad_${uid}`;
-  const ribbonId = `azRibbonGrad_${uid}`;
-  const glowId = `azGlow_${uid}`;
-
+}: DeQLogoProps) {
   const dimensions = {
-    xs: { width: 78, height: 26 },
-    sm: { width: 108, height: 36 },
-    md: { width: 134, height: 44 },
-    lg: { width: 186, height: 60 },
-    xl: { width: 248, height: 80 },
+    xs: { w: 46, h: 30, title: 'text-sm', sub: 'text-[8px]' },
+    sm: { w: 62, h: 38, title: 'text-lg', sub: 'text-[9px]' },
+    md: { w: 78, h: 46, title: 'text-xl', sub: 'text-[10px]' },
+    lg: { w: 106, h: 62, title: 'text-2xl', sub: 'text-xs' },
+    xl: { w: 138, h: 80, title: 'text-3xl', sub: 'text-xs' },
   }[size];
+
+  const strokeClass = (index: number) =>
+    isLoadingMode ? `calligraphy-loop-fast-${index}` : `calligraphy-loop-${index}`;
 
   return (
     <div className="inline-flex items-center gap-2.5 select-none group">
-      {/* Continuously Animated Calligraphy SVG Wordmark: "AzTool" */}
-      <div className={`relative flex items-center ${isLoadingMode ? 'az-logo-loading-pulse' : 'az-logo-float'}`}>
+      {/* Animated Calligraphy "Az" Signature SVG */}
+      <div
+        className={`relative flex items-center justify-center rounded-2xl p-1.5 transition-transform duration-500 ${
+          isLoadingMode
+            ? 'az-logo-loading-pulse bg-gradient-to-br from-[#00c4cc]/20 via-[#7d2ae8]/20 to-[#ff66c4]/20 shadow-lg shadow-purple-500/25 border border-purple-400/50'
+            : 'az-logo-float bg-gradient-to-br from-[#00c4cc]/10 via-[#7d2ae8]/10 to-[#ff66c4]/10 group-hover:scale-105 border border-purple-200/50 dark:border-purple-800/40 shadow-xs'
+        }`}
+      >
+        {/* Active Orbital Ring when Loading */}
+        {isLoadingMode && (
+          <div className="pointer-events-none absolute -inset-1.5 rounded-2xl overflow-hidden">
+            <svg className="w-full h-full az-orbit-spin" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="az-orbit-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#00c4cc" stopOpacity="1" />
+                  <stop offset="50%" stopColor="#7d2ae8" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="#ff66c4" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="50"
+                cy="50"
+                r="46"
+                fill="none"
+                stroke="url(#az-orbit-grad)"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="160 140"
+              />
+            </svg>
+          </div>
+        )}
+
         <svg
-          width={dimensions.width}
-          height={dimensions.height}
-          viewBox="0 0 265 84"
+          width={dimensions.w}
+          height={dimensions.h}
+          viewBox="0 0 185 100"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="overflow-visible"
-          aria-label="AzTool Calligraphy Logo"
+          className="overflow-visible relative z-10"
         >
           <defs>
-            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00C4CC">
-                <animate
-                  attributeName="stop-color"
-                  values="#00C4CC;#7D2AE8;#FF66C4;#00C4CC"
-                  dur={isLoadingMode ? '1.8s' : '4.5s'}
-                  repeatCount="indefinite"
-                />
-              </stop>
-              <stop offset="50%" stopColor="#7D2AE8">
-                <animate
-                  attributeName="stop-color"
-                  values="#7D2AE8;#FF66C4;#00C4CC;#7D2AE8"
-                  dur={isLoadingMode ? '1.8s' : '4.5s'}
-                  repeatCount="indefinite"
-                />
-              </stop>
-              <stop offset="100%" stopColor="#FF66C4">
-                <animate
-                  attributeName="stop-color"
-                  values="#FF66C4;#00C4CC;#7D2AE8;#FF66C4"
-                  dur={isLoadingMode ? '1.8s' : '4.5s'}
-                  repeatCount="indefinite"
-                />
-              </stop>
+            <linearGradient id="az-grad-main" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#00c4cc" />
+              <stop offset="50%" stopColor="#7d2ae8" />
+              <stop offset="100%" stopColor="#ff66c4" />
             </linearGradient>
 
-            <linearGradient id={ribbonId} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#00C4CC">
-                <animate
-                  attributeName="stop-color"
-                  values="#00C4CC;#FF66C4;#00C4CC"
-                  dur={isLoadingMode ? '1.4s' : '3.5s'}
-                  repeatCount="indefinite"
-                />
-              </stop>
-              <stop offset="50%" stopColor="#8B3DFF" />
-              <stop offset="100%" stopColor="#FF66C4">
-                <animate
-                  attributeName="stop-color"
-                  values="#FF66C4;#00C4CC;#FF66C4"
-                  dur={isLoadingMode ? '1.4s' : '3.5s'}
-                  repeatCount="indefinite"
-                />
-              </stop>
+            <linearGradient id="az-grad-accent" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#7d2ae8" />
+              <stop offset="50%" stopColor="#ff66c4" />
+              <stop offset="100%" stopColor="#ffb800" />
             </linearGradient>
 
-            <filter id={glowId} x="-25%" y="-25%" width="150%" height="150%">
-              <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <filter id="az-glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
 
-          {/* Stroke 1: Calligraphic "A" + Cursive "z" */}
+          {/* Subtle background guide tracks during loading so calligraphy path is always visible */}
+          {isLoadingMode && (
+            <g opacity="0.22">
+              <path
+                d="M 18 78 C 28 56, 44 20, 56 14 C 63 11, 68 24, 74 52 C 78 68, 82 77, 88 79"
+                stroke="url(#az-grad-main)"
+                strokeWidth="7.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M 28 53 C 46 47, 68 45, 86 50"
+                stroke="url(#az-grad-accent)"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 98 38 C 114 34, 132 34, 145 36 C 128 52, 110 64, 98 76 C 114 78, 134 78, 154 71"
+                stroke="url(#az-grad-main)"
+                strokeWidth="6.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M 22 88 C 65 96, 122 93, 168 78 C 155 83, 132 86, 112 84"
+                stroke="url(#az-grad-accent)"
+                strokeWidth="3.6"
+                strokeLinecap="round"
+              />
+            </g>
+          )}
+
+          {/* Stroke 1: Calligraphy "A" Left-to-Apex-to-Right Flourish */}
           <path
-            d="M 10 55 C 16 56, 26 24, 34 14 C 39 24, 44 46, 48 55 M 17 39 C 28 34, 42 34, 53 37 M 57 33 C 66 31, 74 31, 79 32 C 71 41, 63 48, 57 54 C 66 53, 75 54, 80 57 C 83 60, 77 68, 70 65 C 66 63, 73 53, 85 46"
-            stroke={`url(#${gradId})`}
-            strokeWidth="4.8"
+            d="M 18 78 C 28 56, 44 20, 56 14 C 63 11, 68 24, 74 52 C 78 68, 82 77, 88 79"
+            pathLength={100}
+            stroke="url(#az-grad-main)"
+            strokeWidth="7.5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={isLoadingMode ? 'calligraphy-loop-fast-1' : 'calligraphy-loop-1'}
-            filter={`url(#${glowId})`}
+            filter="url(#az-glow)"
+            className={`calligraphy-path ${strokeClass(1)}`}
           />
 
-          {/* Stroke 2: Calligraphic Capital "T" */}
+          {/* Stroke 2: Calligraphy "A" Artistic Crossbar Ribbon */}
           <path
-            d="M 92 20 C 105 13, 124 23, 139 16 M 115 18 C 111 32, 108 46, 110 53 C 112 58, 119 57, 125 50"
-            stroke={`url(#${gradId})`}
-            strokeWidth="4.8"
+            d="M 28 53 C 46 47, 68 45, 86 50"
+            pathLength={100}
+            stroke="url(#az-grad-accent)"
+            strokeWidth="5.5"
+            strokeLinecap="round"
+            className={`calligraphy-path ${strokeClass(2)}`}
+          />
+
+          {/* Stroke 3: Cursive "z" Body with Lower Loop */}
+          <path
+            d="M 98 38 C 114 34, 132 34, 145 36 C 128 52, 110 64, 98 76 C 114 78, 134 78, 154 71"
+            pathLength={100}
+            stroke="url(#az-grad-main)"
+            strokeWidth="6.8"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={isLoadingMode ? 'calligraphy-loop-fast-2' : 'calligraphy-loop-2'}
-            filter={`url(#${glowId})`}
+            filter="url(#az-glow)"
+            className={`calligraphy-path ${strokeClass(3)}`}
           />
 
-          {/* Stroke 3: Flowing Cursive "oo" */}
+          {/* Stroke 4: Master Calligraphy Underline Sweep */}
           <path
-            d="M 148 35 C 136 33, 130 42, 132 50 C 134 57, 144 58, 150 51 C 155 44, 152 35, 145 35 C 150 38, 158 38, 165 35 M 181 35 C 169 33, 163 42, 165 50 C 167 57, 177 58, 183 51 C 188 44, 185 35, 178 35 C 183 38, 191 38, 197 34"
-            stroke={`url(#${gradId})`}
-            strokeWidth="4.6"
+            d="M 22 88 C 65 96, 122 93, 168 78 C 155 83, 132 86, 112 84"
+            pathLength={100}
+            stroke="url(#az-grad-accent)"
+            strokeWidth="3.6"
             strokeLinecap="round"
-            strokeLinejoin="round"
-            className={isLoadingMode ? 'calligraphy-loop-fast-3' : 'calligraphy-loop-3'}
+            className={`calligraphy-path ${strokeClass(5)}`}
           />
 
-          {/* Stroke 4: Tall Calligraphic Loop "l" */}
-          <path
-            d="M 197 44 C 205 33, 214 18, 210 13 C 206 9, 200 18, 199 34 C 198 46, 200 55, 207 56 C 213 56, 220 50, 225 44"
-            stroke={`url(#${gradId})`}
-            strokeWidth="4.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={isLoadingMode ? 'calligraphy-loop-fast-4' : 'calligraphy-loop-4'}
-            filter={`url(#${glowId})`}
-          />
-
-          {/* Stroke 5: Dynamic Calligraphy Brush Flourish Underline */}
-          <path
-            d="M 18 68 C 78 60, 168 75, 244 58 C 220 73, 136 78, 46 73"
-            stroke={`url(#${ribbonId})`}
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={isLoadingMode ? 'calligraphy-loop-fast-5' : 'calligraphy-loop-5'}
-          />
-
-          {/* Animated Pen Nib Sparkle Dots */}
+          {/* Sparkle Accents */}
           <circle
-            cx="248"
-            cy="55"
+            cx="162"
+            cy="24"
             r="3.8"
-            fill="#FF66C4"
+            fill="#00c4cc"
             className="calligraphy-dot-infinite"
           />
           <circle
-            cx="228"
-            cy="20"
-            r="2.8"
-            fill="#00C4CC"
+            cx="172"
+            cy="36"
+            r="2.4"
+            fill="#ff66c4"
             className="calligraphy-dot-infinite-delayed"
           />
         </svg>
       </div>
 
-      {showSubtitle && (
-        <div className="flex flex-col text-left border-l border-neutral-200/80 dark:border-neutral-800 pl-2.5">
+      {/* Brand Wordmark */}
+      {showSubtitle ? (
+        <div className="flex flex-col leading-none">
           <div className="flex items-center gap-1.5">
-            <span
-              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                lightText
-                  ? 'bg-white/20 text-white border border-white/25'
-                  : 'bg-purple-100 text-[#7d2ae8] dark:bg-purple-950/70 dark:text-purple-300'
-              }`}
-            >
-              AI Studio
+            <span className={`${dimensions.title} font-black tracking-tight canva-gradient-text`}>
+              AzTool
+            </span>
+            <span className="px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider rounded-md bg-gradient-to-r from-[#00c4cc] to-[#7d2ae8] text-white shadow-2xs">
+              AI
             </span>
           </div>
           <span
-            className={`text-[10px] font-medium mt-0.5 hidden sm:inline ${
-              lightText ? 'text-purple-200' : 'text-neutral-400'
-            }`}
+            className={`${dimensions.sub} font-semibold text-neutral-400 dark:text-neutral-500 tracking-wide mt-0.5`}
           >
-            Nền Tảng Công Cụ Thông Minh
+            Nền tảng Tài liệu &amp; Khảo thí
           </span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 /**
- * Dedicated Animated Logo Loading / Thinking / Processing Indicator
- * Used across all loading HUDs, AI thinking states, and file processing spinners.
+ * Full-featured Animated AzTool Calligraphy Loader for AI & Document Processing States
  */
 export function AzLogoLoader({
-  size = 'md',
-  label,
-  sublabel,
+  title = 'Hệ thống AzTool đang xử lý...',
+  subtitle = 'Vui lòng đợi trong giây lát',
+  progress,
 }: {
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  label?: string;
-  sublabel?: string;
+  title?: string;
+  subtitle?: string;
+  progress?: number;
 }) {
+  const validProgress =
+    typeof progress === 'number' && !isNaN(progress)
+      ? Math.max(0, Math.min(100, Math.round(progress)))
+      : undefined;
+
   return (
-    <div className="inline-flex flex-col items-center justify-center gap-2 text-center">
-      <div className="relative flex items-center justify-center px-3 py-1.5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-cyan-500/10 to-pink-500/10 border border-purple-500/20 shadow-sm">
-        <DeQLogo size={size} showSubtitle={false} isLoadingMode />
+    <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3.5">
+      <div className="relative flex items-center justify-center">
+        <div className="absolute -inset-4 rounded-full bg-gradient-to-r from-[#00c4cc]/30 via-[#7d2ae8]/30 to-[#ff66c4]/30 blur-xl animate-pulse" />
+        <DeQLogo size="lg" showSubtitle={false} isLoadingMode />
+        {validProgress !== undefined && (
+          <span className="absolute -bottom-2 -right-3 z-20 px-2 py-0.5 rounded-full text-[11px] font-black font-mono bg-gradient-to-r from-[#00c4cc] to-[#7d2ae8] text-white shadow-md border border-white/60 dark:border-neutral-900">
+            {validProgress}%
+          </span>
+        )}
       </div>
-      {label && (
-        <div className="text-xs font-extrabold text-neutral-900 dark:text-white tracking-tight">
-          {label}
-        </div>
-      )}
-      {sublabel && (
-        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 max-w-xs">
-          {sublabel}
+      <div className="space-y-1 max-w-md">
+        <p className="text-sm font-extrabold canva-gradient-text">{title}</p>
+        {subtitle && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
+        )}
+      </div>
+      {validProgress !== undefined && (
+        <div className="w-56 max-w-full space-y-1 pt-0.5">
+          <div className="w-full h-2 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden p-0.5 border border-neutral-200/60 dark:border-neutral-700/60">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4] transition-all duration-200 ease-out"
+              style={{ width: `${Math.max(4, validProgress)}%` }}
+            />
+          </div>
+          <p className="text-[10px] font-mono font-bold text-[#7d2ae8] dark:text-purple-300">
+            Tiến độ hoàn thành: {validProgress}%
+          </p>
         </div>
       )}
     </div>
   );
 }
-
-export const AzToolLogo = DeQLogo;

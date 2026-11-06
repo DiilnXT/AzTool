@@ -8,6 +8,8 @@ import {
   analyzeWordThesisDocx,
   applySurgicalFixToZip,
   exportFixedThesisDocxBlob,
+  insertThreeCatalogsAfterTocToZip,
+  formatNumberedAbbreviationLine,
   ThesisAuditReport,
   ThesisAuditIssue,
 } from '@/lib/word-thesis-engine';
@@ -152,12 +154,45 @@ async function createSampleThesisWithErrorsDocx(): Promise<File> {
             ],
           }),
 
-          // CHƯƠNG 1
+          // MỤC LỤC
+          new Paragraph({
+            spacing: { before: 240, after: 100 },
+            children: [
+              new TextRun({
+                text: 'MỤC LỤC',
+                bold: true,
+                size: 28,
+                font: 'Times New Roman',
+              }),
+            ],
+          }),
+          new Paragraph({
+            spacing: { after: 60 },
+            children: [
+              new TextRun({
+                text: 'CHƯƠNG 1: TỔNG QUAN VỀ HOẠT ĐỘNG XÚC TÁC CỦA ENZYM VÀ ỨNG DỤNG CNTT ......... 1',
+                size: 24,
+                font: 'Times New Roman',
+              }),
+            ],
+          }),
+          new Paragraph({
+            spacing: { after: 160 },
+            children: [
+              new TextRun({
+                text: 'CHƯƠNG 2: KẾT QUẢ THỰC NGHIỆM VÀ ĐÁNH GIÁ ........................................ 5',
+                size: 24,
+                font: 'Times New Roman',
+              }),
+            ],
+          }),
+
+          // CHƯƠNG 1 (Có Hình 20.1 sai số chương -> phải sửa thành Hình 1.1., tiếp theo là Hình 1.2.)
           new Paragraph({
             spacing: { before: 300, after: 120 },
             children: [
               new TextRun({
-                text: 'CHƯƠNG 1: TỔNG QUAN VỀ ỨNG DỤNG CNTT TRONG ĐBCL GIÁO DỤC',
+                text: 'CHƯƠNG 1: TỔNG QUAN VỀ HOẠT ĐỘNG XÚC TÁC CỦA ENZYM VÀ ỨNG DỤNG CNTT',
                 bold: true,
                 size: 28,
                 font: 'Times New Roman',
@@ -168,7 +203,7 @@ async function createSampleThesisWithErrorsDocx(): Promise<File> {
             spacing: { after: 120 },
             children: [
               new TextRun({
-                text: 'Trong kỷ nguyên số, việc ứng dụng Công nghệ thông tin (CNTT) và Trí tuệ nhân tạo (AI) giúp nâng cao công tác Đảm bảo chất lượng (ĐBCL) tại các cơ sở đào tạo. Hệ thống CSDL và CNTT đóng vai trò hạt nhân trong chuyển đổi số.',
+                text: 'Trong nghiên cứu hóa sinh lâm sàng và ứng dụng CNTT, các chỉ số enzym như CK (Creatine Kinase), α-amylase và chỉ số HbA1c đóng vai trò đặc biệt quan trọng. Xét nghiệm CK, α-amylase và HbA1c hỗ trợ chẩn đoán chính xác trên hệ thống CSDL và ĐBCL bệnh viện.',
                 size: 26,
                 font: 'Times New Roman',
               }),
@@ -189,42 +224,10 @@ async function createSampleThesisWithErrorsDocx(): Promise<File> {
             spacing: { after: 200 },
             children: [
               new TextRun({
-                text: 'Ảnh 1.1: Sơ đồ kiến trúc tổng thể hệ thống quản lý đào tạo',
+                text: 'Hình 20.1. Mô hình hoạt động xúc tác của enzym và sự tạo thành phức hợp Enzym - Cơ chất',
                 italics: true,
                 bold: true,
                 size: 24,
-                font: 'Times New Roman',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { after: 120 },
-            children: [
-              new TextRun({
-                text: 'Dưới đây là hình minh họa mô hình triển khai thực tế tại đơn vị (nhưng người soạn quên gắn nhãn tên Ảnh 1.2):',
-                size: 26,
-                font: 'Times New Roman',
-              }),
-            ],
-          }),
-          // Unlabelled image sitting between Ảnh 1.1 and Ảnh 1.2!
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 200 },
-            children: [
-              new ImageRun({
-                data: imgUnlabelled,
-                transformation: { width: 320, height: 120 },
-                type: 'png',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { after: 120 },
-            children: [
-              new TextRun({
-                text: 'Tiếp theo là giao diện phân quyền người dùng (đang ghi Ảnh 1.2, lẽ ra phải là Ảnh 1.3 sau khi gắn nhãn Ảnh 1.2 cho hình trên):',
-                size: 26,
                 font: 'Times New Roman',
               }),
             ],
@@ -244,7 +247,7 @@ async function createSampleThesisWithErrorsDocx(): Promise<File> {
             spacing: { after: 200 },
             children: [
               new TextRun({
-                text: 'Ảnh 1.2: Giao diện phân quyền người dùng trên nền tảng web',
+                text: 'Hình 20.2. Đồ thị biểu diễn vận tốc phản ứng theo nồng độ cơ chất (Động học Michaelis - Menten)',
                 italics: true,
                 bold: true,
                 size: 24,
@@ -389,6 +392,8 @@ export function ThesisDocxAuditor() {
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFixingAll, setIsFixingAll] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [catalogsInserted, setCatalogsInserted] = useState(false);
   const [report, setReport] = useState<ThesisAuditReport | null>(null);
   const [activeViewTab, setActiveViewTab] = useState<'issues' | 'figures' | 'tables' | 'abbreviations'>('issues');
   const [filterCategory, setFilterCategory] = useState<'ALL' | 'figure' | 'table' | 'abbreviation'>('ALL');
@@ -402,14 +407,23 @@ export function ThesisDocxAuditor() {
 
   const handleLoadAndAnalyzeFile = async (file: File) => {
     setIsAnalyzing(true);
+    setLoadingProgress(8);
+    setCatalogsInserted(false);
     toast.showLoading(
       'Đang đọc 100% cấu trúc XML của file Word...',
-      'Rà soát Danh mục Từ viết tắt, Danh mục Bảng biểu, Danh mục Hình ảnh & thứ tự đánh số'
+      'Rà soát Danh mục Từ viết tắt, Danh mục Bảng biểu, Danh mục Hình ảnh & thứ tự đánh số theo Chương',
+      8
     );
 
     try {
       originalFileRef.current = file;
-      const { zip, report: auditReport } = await analyzeWordThesisDocx(file);
+      const { zip, report: auditReport } = await analyzeWordThesisDocx(
+        file,
+        (title, sub, pct) => {
+          if (typeof pct === 'number') setLoadingProgress(pct);
+          toast.showLoading(title, sub, pct);
+        }
+      );
       zipRef.current = zip;
       setReport(auditReport);
 
@@ -443,7 +457,7 @@ export function ThesisDocxAuditor() {
       if (auditReport.issues.length > 0) {
         toast.warning(
           `Phát hiện ${auditReport.issues.length} điểm cần chỉnh sửa!`,
-          `Gồm lỗi nhảy số/thiếu nhãn Hình ảnh, Bảng biểu hoặc thiếu Từ viết tắt.`
+          `Gồm lỗi sai số chương (VD: Chương 1 ghi Hình 20.1 → 1.1), nhảy số hoặc thiếu Từ viết tắt.`
         );
       } else {
         toast.success(
@@ -462,6 +476,7 @@ export function ThesisDocxAuditor() {
 
   const handleLoadSampleThesis = async () => {
     setIsAnalyzing(true);
+    setLoadingProgress(5);
     try {
       const sampleFile = await createSampleThesisWithErrorsDocx();
       await handleLoadAndAnalyzeFile(sampleFile);
@@ -479,7 +494,6 @@ export function ThesisDocxAuditor() {
       const customText = customFixInputs[issue.id] ?? issue.suggestedFixText;
       applySurgicalFixToZip(zipRef.current, issue, customText, report.tocZones);
 
-      // Mark this issue (and any cascaded issues that were resolved by this cascade) as fixed
       const cascadedNodeIndices = new Set(
         (issue.cascadeUpdates || []).map(c => c.xmlNodeIndex)
       );
@@ -516,65 +530,117 @@ export function ThesisDocxAuditor() {
     }
   };
 
-  const handleFixAllIssues = () => {
+  const handleInsertThreeCatalogsOnly = () => {
+    if (!zipRef.current || !report) return;
+    try {
+      toast.showLoading(
+        'Đang chèn 3 Danh mục vào sau Mục lục & trước Nội dung...',
+        'Danh mục hình • Danh mục bảng • Danh mục từ viết tắt',
+        65
+      );
+      const ok = insertThreeCatalogsAfterTocToZip(zipRef.current, report, customFixInputs);
+      if (ok) {
+        setCatalogsInserted(true);
+        toast.success(
+          'Đã chèn 3 Danh mục chuẩn vào sau Mục lục!',
+          'Danh mục hình, Danh mục bảng & Danh mục từ viết tắt đã được đặt ngay trước phần nội dung chính.'
+        );
+        confetti({ particleCount: 50, spread: 60 });
+      } else {
+        toast.warning('Không tìm thấy mục nào để chèn vào danh mục.');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi khi chèn 3 danh mục', err.message || String(err));
+    }
+  };
+
+  const handleFixAllIssues = async () => {
     if (!zipRef.current || !report) return;
     const unfixed = report.issues.filter(i => !i.fixed);
-    if (unfixed.length === 0) {
-      toast.info('Tất cả các lỗi đều đã được sửa!');
-      return;
-    }
 
     setIsFixingAll(true);
+    setLoadingProgress(10);
     toast.showLoading(
-      `Đang sửa tự động ${unfixed.length} vị trí trong file Word...`,
-      'Bảo toàn 100% font chữ, công thức toán, hình ảnh, bảng biểu và định dạng gốc'
+      `Đang sửa tự động ${unfixed.length} vị trí & chèn 3 Danh mục sau Mục lục...`,
+      'Chuẩn hóa Chương 1 → Hình 1.1, 1.2... & giữ nguyên 100% định dạng gốc',
+      10
     );
 
-    setTimeout(() => {
-      try {
-        const alreadyCascadedNodes = new Set<number>();
+    try {
+      await new Promise(r => setTimeout(r, 30));
+      const alreadyCascadedNodes = new Set<number>();
 
-        for (const iss of unfixed) {
-          if (alreadyCascadedNodes.has(iss.xmlNodeIndex) && iss.fixAction === 'replace_paragraph_text') {
-            continue;
-          }
-          const customText = customFixInputs[iss.id] ?? iss.suggestedFixText;
-          applySurgicalFixToZip(zipRef.current!, iss, customText, report.tocZones);
-          for (const c of iss.cascadeUpdates || []) {
-            alreadyCascadedNodes.add(c.xmlNodeIndex);
-          }
+      for (let i = 0; i < unfixed.length; i++) {
+        const iss = unfixed[i];
+        const pct = Math.round(15 + ((i + 1) / Math.max(1, unfixed.length)) * 60);
+        setLoadingProgress(pct);
+        toast.showLoading(
+          `Đang sửa tự động (${i + 1}/${unfixed.length}): ${iss.locationLabel}...`,
+          iss.title,
+          pct
+        );
+
+        if (alreadyCascadedNodes.has(iss.xmlNodeIndex) && iss.fixAction === 'replace_paragraph_text') {
+          continue;
+        }
+        const customText = customFixInputs[iss.id] ?? iss.suggestedFixText;
+        applySurgicalFixToZip(zipRef.current!, iss, customText, report.tocZones);
+        for (const c of iss.cascadeUpdates || []) {
+          alreadyCascadedNodes.add(c.xmlNodeIndex);
         }
 
-        setReport(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            issues: prev.issues.map(item => ({
-              ...item,
-              fixed: true,
-              currentText: customFixInputs[item.id] ?? item.suggestedFixText,
-            })),
-          };
-        });
-
-        setFixedCount(report.issues.length);
-        toast.success(
-          `Đã sửa hoàn tất ${unfixed.length} vị trí lỗi!`,
-          'Bấm nút "Tải File Word Đã Chỉnh Sửa (.docx)" để tải về ngay.'
-        );
-        confetti({ particleCount: 75, spread: 70 });
-      } catch (err: any) {
-        toast.error('Lỗi khi sửa hàng loạt', err.message || String(err));
-      } finally {
-        setIsFixingAll(false);
-        toast.hideLoading();
+        if (i % 2 === 0) {
+          await new Promise(r => setTimeout(r, 18));
+        }
       }
-    }, 350);
+
+      // Automatically insert/update the 3 Catalogs (Danh mục hình, Danh mục bảng, Danh mục từ viết tắt)
+      // right AFTER Mục lục and BEFORE Main Content!
+      setLoadingProgress(88);
+      toast.showLoading(
+        'Đang chèn 3 Danh mục (Hình, Bảng, Từ viết tắt) vào sau Mục lục...',
+        'Đặt ngay sau Mục lục và trước phần Mở đầu / Chương 1',
+        88
+      );
+      await new Promise(r => setTimeout(r, 25));
+      insertThreeCatalogsAfterTocToZip(zipRef.current!, report, customFixInputs);
+      setCatalogsInserted(true);
+
+      setReport(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          issues: prev.issues.map(item => ({
+            ...item,
+            fixed: true,
+            currentText: customFixInputs[item.id] ?? item.suggestedFixText,
+          })),
+        };
+      });
+
+      setLoadingProgress(100);
+      setFixedCount(report.issues.length);
+      toast.success(
+        `Đã sửa ${unfixed.length} lỗi & chèn 3 Danh mục sau Mục lục!`,
+        'Bấm nút "Tải File Word Đã Chỉnh Sửa (.docx)" để tải về ngay.'
+      );
+      confetti({ particleCount: 75, spread: 70 });
+    } catch (err: any) {
+      toast.error('Lỗi khi sửa hàng loạt', err.message || String(err));
+    } finally {
+      setIsFixingAll(false);
+      toast.hideLoading();
+    }
   };
 
   const handleDownloadFixedDocx = () => {
     if (!zipRef.current || !report) return;
     try {
+      // Ensure 3 catalogs after Mục lục are always up to date when exporting if user fixed issues
+      if (!catalogsInserted) {
+        insertThreeCatalogsAfterTocToZip(zipRef.current, report, customFixInputs);
+        setCatalogsInserted(true);
+      }
       const fixedBlob = exportFixedThesisDocxBlob(zipRef.current);
       const baseName = report.fileName.replace(/\.docx?$/i, '');
       const outName = `${baseName}_DaChinhSua_ChuanDanhMuc.docx`;
@@ -602,7 +668,7 @@ export function ThesisDocxAuditor() {
 
       toast.success(
         'Đã tải File Word Đã Chỉnh Sửa (.docx)!',
-        `File "${outName}" giữ nguyên 100% nội dung và định dạng gốc, chỉ sửa đúng các vị trí danh mục/ghi chú.`
+        `File "${outName}" đã chuẩn hóa Chương 1 → Hình 1.1, 1.2... và chèn đủ 3 Danh mục ngay sau Mục lục.`
       );
       confetti({ particleCount: 60, spread: 60 });
     } catch (err: any) {
@@ -630,7 +696,7 @@ export function ThesisDocxAuditor() {
               Kiểm Duyệt Danh Mục Hình Ảnh, Bảng Biểu, Từ Viết Tắt &amp; Sửa Thẳng Vào File Word
             </h2>
             <p className="text-xs sm:text-sm text-purple-100/85 leading-relaxed">
-              Đọc <strong>100% toàn bộ cấu trúc XML của file Word</strong> không sót một chữ: Tự động phát hiện <strong>đánh nhảy số</strong> (VD: đang Ảnh 2.3 nhảy sang Ảnh 2.5), <strong>hình ảnh/bảng ở giữa quên gắn nhãn</strong> (lẽ ra là 2.3 → 2.4 → 2.5), <strong>trùng số thứ tự</strong> hoặc <strong>thiếu Từ viết tắt</strong>. Bấm nút sửa ngay tại từng lỗi — <strong>chỉ sửa đúng vị trí đó, giữ nguyên 100% định dạng gốc của file Word!</strong>
+              Đọc <strong>100% toàn bộ cấu trúc XML của file Word</strong>: Tự động đối chiếu theo đúng <strong>Chương thực tế</strong> (VD: Chương 1 mà ghi <strong>Hình 20.1</strong> sẽ tự động sửa lại thành <strong>Hình 1.1.</strong>, hình tiếp theo là <strong>Hình 1.2.</strong>), bắt lỗi nhảy số (2.3 → 2.5), và <strong>tự động chèn 3 Danh mục (Danh mục hình, Danh mục bảng, Danh mục từ viết tắt) vào ngay sau Mục lục &amp; trước Nội dung chính!</strong>
             </p>
           </div>
 
@@ -652,7 +718,7 @@ export function ThesisDocxAuditor() {
               className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white border border-white/20 font-bold text-xs transition canva-tap flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Nạp Đề Án Mẫu Có Lỗi (2.3 → 2.5) Để Test Ngay</span>
+              <span>Nạp Đề Án Mẫu Có Lỗi (Hình 20.1 → 1.1 &amp; CK, HbA1c)</span>
             </button>
           </div>
         </div>
@@ -695,7 +761,7 @@ export function ThesisDocxAuditor() {
               Kéo thả hoặc nhấn vào đây để tải lên File Word (.docx) Đề Án, Luận Văn, Giáo Trình
             </h3>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Hệ thống sẽ đọc toàn bộ 100% các chương mục, bảng biểu, hình ảnh nhúng và từ viết tắt để đối chiếu chéo và đề xuất sửa trực tiếp từng vị trí.
+              Hệ thống sẽ đọc toàn bộ 100% các chương mục, bảng biểu, hình ảnh nhúng và từ viết tắt để chuẩn hóa số thứ tự theo Chương (Chương 1 → Hình 1.1, 1.2...) và tự động chèn 3 Danh mục ngay sau Mục lục.
             </p>
           </div>
 
@@ -703,10 +769,10 @@ export function ThesisDocxAuditor() {
             <div className="p-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 space-y-1">
               <div className="font-black text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4" />
-                <span>1. Danh Mục Hình Ảnh / Sơ Đồ</span>
+                <span>1. Danh Mục Hình (Chuẩn Chương)</span>
               </div>
               <p className="text-[11px] text-neutral-500">
-                Bắt lỗi nhảy số (VD: Ảnh 2.3 → 2.5), ảnh chèn giữa quên gắn nhãn, trùng số thứ tự hoặc lệch Danh mục hình.
+                Sửa ngay lỗi sai số chương (VD: Chương 1 ghi Hình 20.1 → đổi thành Hình 1.1., tiếp theo là Hình 1.2.).
               </p>
             </div>
 
@@ -716,30 +782,30 @@ export function ThesisDocxAuditor() {
                 <span>2. Danh Mục Bảng Biểu</span>
               </div>
               <p className="text-[11px] text-neutral-500">
-                Kiểm tra toàn bộ bảng dữ liệu trong bài, phát hiện bảng thiếu tiêu đề, đánh nhảy số Bảng 1.1 → 1.3.
+                Kiểm tra toàn bộ bảng dữ liệu theo từng chương, sửa lỗi đánh nhảy số Bảng 1.1 → 1.3 thành 1.1 → 1.2.
               </p>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 space-y-1">
               <div className="font-black text-[#7d2ae8] dark:text-purple-400 flex items-center gap-1.5">
                 <BookOpenCheck className="w-4 h-4" />
-                <span>3. Danh Mục Từ Viết Tắt</span>
+                <span>3. Danh Mục Từ Viết Tắt (Y Sinh &amp; Học Thuật)</span>
               </div>
               <p className="text-[11px] text-neutral-500">
-                Quét mọi từ viết tắt (CNTT, ĐBCL, GD&amp;ĐT...) dùng trong bài mà quên liệt kê vào Danh mục từ viết tắt hoặc từ thừa.
+                Tự động lập danh mục đánh số 1. CK (Creatine Kinase)..., 2. α-amylase..., 3. HbA1c... chèn sau Mục lục.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Loading State with Animated AzTool Logo */}
+      {/* Loading State with Animated AzTool Logo & Live % */}
       {isAnalyzing && (
         <div className="canva-card p-12 rounded-3xl border border-neutral-200 dark:border-neutral-800 text-center">
           <AzLogoLoader
-            size="lg"
-            label="Đang đọc 100% file Word & kiểm tra Danh mục Hình ảnh, Bảng biểu, Từ viết tắt..."
-            sublabel="Phân tích từng đoạn văn, hình ảnh nhúng và bảng dữ liệu trong word/document.xml"
+            title="Đang đọc 100% file Word & kiểm tra Danh mục Hình, Bảng, Từ viết tắt..."
+            subtitle="Phân tích từng Chương, hình ảnh nhúng và bảng dữ liệu trong word/document.xml"
+            progress={loadingProgress}
           />
         </div>
       )}
@@ -759,6 +825,11 @@ export function ThesisDocxAuditor() {
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>Bảo toàn 100% định dạng gốc</span>
                 </span>
+                {catalogsInserted && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300">
+                    ✓ Đã chèn 3 Danh mục sau Mục lục
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-neutral-600 dark:text-neutral-300 pt-1">
@@ -777,23 +848,36 @@ export function ThesisDocxAuditor() {
               </div>
             </div>
 
-            {/* Action Buttons: Fix All & Download Edited Word File */}
+            {/* Action Buttons: Fix All, Insert 3 Catalogs & Download Edited Word File */}
             <div className="flex flex-wrap items-center gap-2.5">
               {remainingUnfixedCount > 0 && (
                 <button
                   type="button"
-                  onClick={handleFixAllIssues}
+                  onClick={() => void handleFixAllIssues()}
                   disabled={isFixingAll}
-                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-600 hover:to-rose-700 text-white font-black text-xs sm:text-sm shadow-lg transition canva-tap flex items-center gap-2"
+                  className="px-4 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-600 hover:to-rose-700 text-white font-black text-xs sm:text-sm shadow-lg transition canva-tap flex items-center gap-2"
                 >
                   {isFixingAll ? (
                     <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
                   ) : (
                     <Wand2 className="w-4 h-4" />
                   )}
-                  <span>Sửa Tự Động Tất Cả ({remainingUnfixedCount} lỗi)</span>
+                  <span>
+                    {isFixingAll
+                      ? `Đang xử lý ${loadingProgress}%...`
+                      : `Sửa Tất Cả & Chèn 3 Danh Mục (${remainingUnfixedCount} lỗi)`}
+                  </span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={handleInsertThreeCatalogsOnly}
+                className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm shadow-md transition canva-tap flex items-center gap-1.5"
+              >
+                <Layers className="w-4 h-4" />
+                <span>Chèn 3 Danh Mục (Sau Mục Lục)</span>
+              </button>
 
               <button
                 type="button"
@@ -1080,16 +1164,45 @@ export function ThesisDocxAuditor() {
           {/* ================================================================= */}
           {activeViewTab === 'figures' && (
             <div className="canva-card p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
-                    Toàn Bộ Danh Mục Hình Ảnh / Ảnh / Sơ Đồ Trong Tài Liệu ({report.figuresCatalog.length})
+                    Danh Mục Hình Chuẩn Hóa Theo Chương ({report.figuresCatalog.length} hình)
                   </h3>
                   <p className="text-xs text-neutral-500">
-                    Quét 100% các nhãn Hình, Ảnh, Sơ đồ, Biểu đồ theo đúng thứ tự xuất hiện từ đầu đến cuối file Word.
+                    Tự động sắp xếp theo đúng Chương thực tế (VD: Chương 1 → Hình 1.1., Hình 1.2....) để chèn vào sau Mục lục &amp; trước Nội dung.
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lines = [
+                      'Danh mục hình',
+                      ...report.figuresCatalog.map(
+                        f => `Hình ${f.expectedNumberStr}. ${f.title || f.fullCaption}`
+                      ),
+                    ].join('\n');
+                    navigator.clipboard.writeText(lines);
+                    toast.success('Đã sao chép Danh mục hình chuẩn!');
+                  }}
+                  className="canva-btn-secondary px-3.5 py-2 rounded-xl text-xs font-bold"
+                >
+                  Sao chép Danh mục hình
+                </button>
               </div>
+
+              {report.figuresCatalog.length > 0 && (
+                <div className="p-4 rounded-2xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-200/70 dark:border-cyan-800/50 space-y-1.5 text-xs">
+                  <div className="font-black text-cyan-800 dark:text-cyan-300">
+                    Danh mục hình (Bản chuẩn chèn sau Mục lục):
+                  </div>
+                  {report.figuresCatalog.map(fig => (
+                    <div key={`prev-${fig.id}`} className="font-medium text-neutral-800 dark:text-neutral-200">
+                      <strong>Hình {fig.expectedNumberStr}.</strong> {fig.title || fig.fullCaption}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {report.figuresCatalog.length === 0 ? (
                 <p className="text-xs text-neutral-400 py-8 text-center">
@@ -1100,33 +1213,25 @@ export function ThesisDocxAuditor() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 font-extrabold border-b border-neutral-200 dark:border-neutral-800">
-                        <th className="py-3 px-4">STT</th>
-                        <th className="py-3 px-4">Số Hiệu Hình</th>
+                        <th className="py-3 px-4">Chương</th>
+                        <th className="py-3 px-4">Số Đang Ghi</th>
+                        <th className="py-3 px-4">Số Chuẩn Theo Chương</th>
                         <th className="py-3 px-4">Nội Dung Ghi Chú (Caption)</th>
-                        <th className="py-3 px-4">Ảnh Đính Kèm</th>
                         <th className="py-3 px-4">Vị Trí Đoạn</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200/70 dark:divide-neutral-800">
-                      {report.figuresCatalog.map((fig, idx) => (
+                      {report.figuresCatalog.map(fig => (
                         <tr key={fig.id} className="hover:bg-cyan-50/30 dark:hover:bg-neutral-800/40">
-                          <td className="py-3 px-4 font-bold">{idx + 1}</td>
-                          <td className="py-3 px-4 font-black text-cyan-700 dark:text-cyan-400">
+                          <td className="py-3 px-4 font-bold">Chương {fig.actualChapter}</td>
+                          <td className="py-3 px-4 font-mono text-neutral-500">
                             {fig.prefix} {fig.numberStr}
+                          </td>
+                          <td className="py-3 px-4 font-black text-cyan-700 dark:text-cyan-400">
+                            Hình {fig.expectedNumberStr}.
                           </td>
                           <td className="py-3 px-4 font-semibold text-neutral-900 dark:text-white">
                             {fig.title || fig.fullCaption}
-                          </td>
-                          <td className="py-3 px-4">
-                            {fig.hasAdjacentMedia ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                                Có ảnh nhúng
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                                Chỉ có nhãn chữ
-                              </span>
-                            )}
                           </td>
                           <td className="py-3 px-4 font-mono text-neutral-500">
                             Đoạn #{fig.xmlNodeIndex + 1}
@@ -1145,14 +1250,45 @@ export function ThesisDocxAuditor() {
           {/* ================================================================= */}
           {activeViewTab === 'tables' && (
             <div className="canva-card p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800 space-y-4">
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
-                  Toàn Bộ Danh Mục Bảng Biểu Trong Tài Liệu ({report.tablesCatalog.length})
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  Danh sách tất cả các bảng số liệu và tiêu đề bảng được trích xuất từ file Word.
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
+                    Danh Mục Bảng Biểu Chuẩn Hóa Theo Chương ({report.tablesCatalog.length} bảng)
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    Sắp xếp chuẩn theo từng Chương (Bảng 1.1., Bảng 1.2....) để chèn vào sau Mục lục.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lines = [
+                      'Danh mục bảng',
+                      ...report.tablesCatalog.map(
+                        t => `Bảng ${t.expectedNumberStr}. ${t.title || t.fullCaption}`
+                      ),
+                    ].join('\n');
+                    navigator.clipboard.writeText(lines);
+                    toast.success('Đã sao chép Danh mục bảng chuẩn!');
+                  }}
+                  className="canva-btn-secondary px-3.5 py-2 rounded-xl text-xs font-bold"
+                >
+                  Sao chép Danh mục bảng
+                </button>
               </div>
+
+              {report.tablesCatalog.length > 0 && (
+                <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-800/50 space-y-1.5 text-xs">
+                  <div className="font-black text-emerald-800 dark:text-emerald-300">
+                    Danh mục bảng (Bản chuẩn chèn sau Mục lục):
+                  </div>
+                  {report.tablesCatalog.map(tbl => (
+                    <div key={`prev-t-${tbl.id}`} className="font-medium text-neutral-800 dark:text-neutral-200">
+                      <strong>Bảng {tbl.expectedNumberStr}.</strong> {tbl.title || tbl.fullCaption}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {report.tablesCatalog.length === 0 ? (
                 <p className="text-xs text-neutral-400 py-8 text-center">
@@ -1163,33 +1299,25 @@ export function ThesisDocxAuditor() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 font-extrabold border-b border-neutral-200 dark:border-neutral-800">
-                        <th className="py-3 px-4">STT</th>
-                        <th className="py-3 px-4">Số Hiệu Bảng</th>
+                        <th className="py-3 px-4">Chương</th>
+                        <th className="py-3 px-4">Số Đang Ghi</th>
+                        <th className="py-3 px-4">Số Chuẩn Theo Chương</th>
                         <th className="py-3 px-4">Tên Bảng Biểu</th>
-                        <th className="py-3 px-4">Bảng Dữ Liệu Word</th>
                         <th className="py-3 px-4">Vị Trí Đoạn</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200/70 dark:divide-neutral-800">
-                      {report.tablesCatalog.map((tbl, idx) => (
+                      {report.tablesCatalog.map(tbl => (
                         <tr key={tbl.id} className="hover:bg-emerald-50/30 dark:hover:bg-neutral-800/40">
-                          <td className="py-3 px-4 font-bold">{idx + 1}</td>
-                          <td className="py-3 px-4 font-black text-emerald-700 dark:text-emerald-400">
+                          <td className="py-3 px-4 font-bold">Chương {tbl.actualChapter}</td>
+                          <td className="py-3 px-4 font-mono text-neutral-500">
                             {tbl.prefix} {tbl.numberStr}
+                          </td>
+                          <td className="py-3 px-4 font-black text-emerald-700 dark:text-emerald-400">
+                            Bảng {tbl.expectedNumberStr}.
                           </td>
                           <td className="py-3 px-4 font-semibold text-neutral-900 dark:text-white">
                             {tbl.title || tbl.fullCaption}
-                          </td>
-                          <td className="py-3 px-4">
-                            {tbl.hasAdjacentMedia ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                                Khớp bảng &lt;w:tbl&gt;
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                                Chưa thấy bảng sát cạnh
-                              </span>
-                            )}
                           </td>
                           <td className="py-3 px-4 font-mono text-neutral-500">
                             Đoạn #{tbl.xmlNodeIndex + 1}
@@ -1208,33 +1336,69 @@ export function ThesisDocxAuditor() {
           {/* ================================================================= */}
           {activeViewTab === 'abbreviations' && (
             <div className="canva-card p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800 space-y-4">
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
-                  Bảng Đối Chiếu Danh Mục Từ Viết Tắt ({report.abbreviations.length} từ)
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  So sánh toàn bộ chữ viết tắt xuất hiện trong nội dung bài viết với bảng Danh mục từ viết tắt đầu tài liệu.
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
+                    Danh Mục Từ Viết Tắt ({report.abbreviations.length} từ)
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    Đánh số tự động (1. CK (Creatine Kinase): ..., 2. α-amylase: ..., 3. HbA1c: ...) và chèn vào sau Mục lục.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const active = report.abbreviations.filter(
+                      ab => ab.occurrencesInBody > 0 || ab.inFrontMatterList
+                    );
+                    const lines = [
+                      'Danh mục từ viết tắt',
+                      ...active.map((ab, idx) => formatNumberedAbbreviationLine(idx + 1, ab)),
+                    ].join('\n');
+                    navigator.clipboard.writeText(lines);
+                    toast.success('Đã sao chép Danh mục từ viết tắt chuẩn!');
+                  }}
+                  className="canva-btn-secondary px-3.5 py-2 rounded-xl text-xs font-bold"
+                >
+                  Sao chép Danh mục từ viết tắt
+                </button>
               </div>
+
+              {report.abbreviations.length > 0 && (
+                <div className="p-4 rounded-2xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-800/50 space-y-1.5 text-xs">
+                  <div className="font-black text-[#7d2ae8] dark:text-purple-300">
+                    Danh mục từ viết tắt (Bản chuẩn chèn sau Mục lục):
+                  </div>
+                  {report.abbreviations
+                    .filter(ab => ab.occurrencesInBody > 0 || ab.inFrontMatterList)
+                    .map((ab, idx) => (
+                      <div key={`prev-ab-${ab.acronym}`} className="font-medium text-neutral-800 dark:text-neutral-200">
+                        {formatNumberedAbbreviationLine(idx + 1, ab)}
+                      </div>
+                    ))}
+                </div>
+              )}
 
               <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 font-extrabold border-b border-neutral-200 dark:border-neutral-800">
+                      <th className="py-3 px-4">STT</th>
                       <th className="py-3 px-4">Từ Viết Tắt</th>
-                      <th className="py-3 px-4">Giải Nghĩa Đầy Đủ (Gợi ý / Đã khai báo)</th>
-                      <th className="py-3 px-4 text-center">Số Lần Dùng Trong Bài</th>
-                      <th className="py-3 px-4 text-center">Trạng Thái Danh Mục</th>
+                      <th className="py-3 px-4">Giải Nghĩa Chuẩn (Gợi ý / Đã khai báo)</th>
+                      <th className="py-3 px-4 text-center">Số Lần Dùng</th>
+                      <th className="py-3 px-4 text-center">Trạng Thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200/70 dark:divide-neutral-800">
-                    {report.abbreviations.map(ab => (
+                    {report.abbreviations.map((ab, idx) => (
                       <tr key={ab.acronym} className="hover:bg-purple-50/30 dark:hover:bg-neutral-800/40">
+                        <td className="py-3 px-4 font-bold">{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-black text-sm text-[#7d2ae8] dark:text-purple-300">
                           {ab.acronym}
                         </td>
                         <td className="py-3 px-4 font-semibold text-neutral-800 dark:text-neutral-200">
-                          {ab.meaningInToc || ab.inferredMeaning}
+                          {formatNumberedAbbreviationLine(idx + 1, ab)}
                           <div className="text-[11px] font-normal text-neutral-400 truncate max-w-md">
                             Ngữ cảnh: &ldquo;{ab.firstContextSnippet}&rdquo;
                           </div>

@@ -23,7 +23,7 @@ import PizZip from 'pizzip';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
-import { callGeminiVisionApi } from '@/lib/gemini';
+import { callGeminiVisionApi, getAvailableKeys } from '@/lib/gemini';
 import {
   Document,
   Packer,
@@ -829,20 +829,124 @@ type OmmlMathNode =
   | { type: 'nary'; chr: string; sub: OmmlMathNode[]; sup: OmmlMathNode[]; base: OmmlMathNode[] }
   | { type: 'delim'; begChr: string; endChr: string; inner: OmmlMathNode[] }
   | { type: 'limLow'; base: OmmlMathNode[]; lim: OmmlMathNode[] }
+  | { type: 'limUpp'; base: OmmlMathNode[]; lim: OmmlMathNode[] }
+  | { type: 'func'; fName: OmmlMathNode[]; arg: OmmlMathNode[] }
   | { type: 'acc'; chr: string; base: OmmlMathNode[] }
   | { type: 'matrix'; rows: OmmlMathNode[][][] };
 
+function getXmlLocalName(el: Element): string {
+  return (el.localName || el.tagName.replace(/^[a-zA-Z0-9]+:/, '')).trim();
+}
+
 function getDirectChildByTag(parent: Element, localOrFullTag: string): Element | null {
+  const targetLocal = localOrFullTag.replace(/^[a-zA-Z0-9]+:/, '');
   for (let i = 0; i < parent.childNodes.length; i++) {
     const c = parent.childNodes[i];
     if (c.nodeType === 1) {
       const el = c as Element;
-      if (el.tagName === localOrFullTag || el.localName === localOrFullTag.replace(/^m:/, '')) {
+      if (el.tagName === localOrFullTag || getXmlLocalName(el) === targetLocal) {
         return el;
       }
     }
   }
   return null;
+}
+
+/**
+ * Parses inline LaTeX or linear equations (e.g. \frac{V_{max}[S]}{K_m + [S]}, \sqrt{x^2+y^2}, E = mc^2)
+ * into 2D OmmlMathNode[] so even equations typed as linear text or LaTeX render in 2D!
+ */
+function parseLatexOrLinearMathToNodes(expr: string): OmmlMathNode[] {
+  const nodes: OmmlMathNode[] = [];
+  let i = 0;
+  const s = normalizeMathGlyphs(expr.trim().replace(/^\$+|\$+$/g, ''));
+
+  const readBracedGroup = (startIdx: number): { content: string; nextIdx: number } => {
+    while (startIdx < s.length && s[startIdx] === ' ') startIdx++;
+    if (s[startIdx] === '{') {
+      let depth = 0;
+      let j = startIdx;
+      while (j < s.length) {
+        if (s[j] === '{') depth++;
+        else if (s[j] === '}') {
+          depth--;
+          if (depth === 0) {
+            return { content: s.slice(startIdx + 1, j), nextIdx: j + 1 };
+          }
+        }
+        j++;
+      }
+      return { content: s.slice(startIdx + 1), nextIdx: s.length };
+    }
+    const m = s.slice(startIdx).match(/^([A-Za-z0-9α-ωΑ-Ω+\-]+|.)/);
+    const tok = m ? m[1] : '';
+    return { content: tok, nextIdx: startIdx + tok.length };
+  };
+
+  let textBuf = '';
+  const flushText = () => {
+    if (textBuf) {
+      nodes.push({ type: 'text', text: normalizeMathGlyphs(textBuf) });
+      textBuf = '';
+    }
+  };
+
+  while (i < s.length) {
+    if (s.startsWith('\\frac', i) || s.startsWith('\\dfrac', i) || s.startsWith('\\tfrac', i)) {
+      flushText();
+      const cmdLen = s.startsWith('\\dfrac', i) || s.startsWith('\\tfrac', i) ? 6 : 5;
+      const g1 = readBracedGroup(i + cmdLen);
+      const g2 = readBracedGroup(g1.nextIdx);
+      nodes.push({
+        type: 'frac',
+        num: parseLatexOrLinearMathToNodes(g1.content),
+        den: parseLatexOrLinearMathToNodes(g2.content),
+      });
+      i = g2.nextIdx;
+    } else if (s.startsWith('\\sqrt', i)) {
+      flushText();
+      let cur = i + 5;
+      let degNodes: OmmlMathNode[] = [];
+      if (s[cur] === '[') {
+        const closeBracket = s.indexOf(']', cur);
+        if (closeBracket > cur) {
+          degNodes = parseLatexOrLinearMathToNodes(s.slice(cur + 1, closeBracket));
+          cur = closeBracket + 1;
+        }
+      }
+      const g = readBracedGroup(cur);
+      nodes.push({
+        type: 'rad',
+        deg: degNodes,
+        base: parseLatexOrLinearMathToNodes(g.content),
+      });
+      i = g.nextIdx;
+    } else if ((s[i] === '^' || s[i] === '_') && (textBuf.length > 0 || nodes.length > 0)) {
+      const op = s[i];
+      let baseNode: OmmlMathNode;
+      if (textBuf.length > 0) {
+        const lastChar = textBuf.slice(-1);
+        textBuf = textBuf.slice(0, -1);
+        flushText();
+        baseNode = { type: 'text', text: lastChar };
+      } else {
+        baseNode = nodes.pop()!;
+      }
+      const g = readBracedGroup(i + 1);
+      const scriptNodes = parseLatexOrLinearMathToNodes(g.content);
+      nodes.push(
+        op === '^'
+          ? { type: 'sup', base: [baseNode], sup: scriptNodes }
+          : { type: 'sub', base: [baseNode], sub: scriptNodes }
+      );
+      i = g.nextIdx;
+    } else {
+      textBuf += s[i];
+      i++;
+    }
+  }
+  flushText();
+  return nodes;
 }
 
 /**
@@ -856,52 +960,79 @@ function parseOmmlNodes(container: Element | null): OmmlMathNode[] {
     const child = container.childNodes[i];
     if (child.nodeType !== 1) continue;
     const el = child as Element;
-    const tag = el.tagName;
+    const local = getXmlLocalName(el);
 
-    if (tag === 'm:r' || tag === 'w:r') {
+    if (local === 'r') {
       let runTxt = '';
-      const ts = el.getElementsByTagName('m:t');
-      if (ts.length > 0) {
+      for (let j = 0; j < el.childNodes.length; j++) {
+        const rc = el.childNodes[j];
+        if (rc.nodeType === 1) {
+          const rcEl = rc as Element;
+          const rcLocal = getXmlLocalName(rcEl);
+          if (rcLocal === 't' || rcLocal === 'instrText') {
+            runTxt += rcEl.textContent || '';
+          } else if (rcLocal === 'sym') {
+            const symChar = rcEl.getAttribute('w:char') || rcEl.getAttribute('char') || '';
+            if (symChar) {
+              const code = parseInt(symChar, 16);
+              if (!isNaN(code)) {
+                runTxt += String.fromCharCode(code > 0xf000 ? code - 0xf000 : code);
+              }
+            }
+          }
+        }
+      }
+      if (!runTxt) {
+        const ts = el.getElementsByTagName('m:t');
         for (let j = 0; j < ts.length; j++) runTxt += ts[j].textContent || '';
-      } else {
-        const wts = el.getElementsByTagName('w:t');
-        for (let j = 0; j < wts.length; j++) runTxt += wts[j].textContent || '';
       }
       if (runTxt) {
-        result.push({ type: 'text', text: normalizeMathGlyphs(runTxt) });
+        if (/\\frac|\\sqrt|\^\{|_\{/.test(runTxt)) {
+          result.push(...parseLatexOrLinearMathToNodes(runTxt));
+        } else {
+          result.push({ type: 'text', text: normalizeMathGlyphs(runTxt) });
+        }
       }
-    } else if (tag === 'm:f') {
+    } else if (local === 'f') {
       result.push({
         type: 'frac',
         num: parseOmmlNodes(getDirectChildByTag(el, 'm:num')),
         den: parseOmmlNodes(getDirectChildByTag(el, 'm:den')),
       });
-    } else if (tag === 'm:rad') {
+    } else if (local === 'rad') {
       result.push({
         type: 'rad',
         deg: parseOmmlNodes(getDirectChildByTag(el, 'm:deg')),
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
       });
-    } else if (tag === 'm:sSup') {
+    } else if (local === 'sSup') {
       result.push({
         type: 'sup',
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
         sup: parseOmmlNodes(getDirectChildByTag(el, 'm:sup')),
       });
-    } else if (tag === 'm:sSub') {
+    } else if (local === 'sSub') {
       result.push({
         type: 'sub',
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
         sub: parseOmmlNodes(getDirectChildByTag(el, 'm:sub')),
       });
-    } else if (tag === 'm:sSubSup') {
+    } else if (local === 'sSubSup') {
       result.push({
         type: 'subsup',
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
         sub: parseOmmlNodes(getDirectChildByTag(el, 'm:sub')),
         sup: parseOmmlNodes(getDirectChildByTag(el, 'm:sup')),
       });
-    } else if (tag === 'm:nary') {
+    } else if (local === 'sPre') {
+      result.push({
+        type: 'subsup',
+        base: [{ type: 'text', text: '' }],
+        sub: parseOmmlNodes(getDirectChildByTag(el, 'm:sub')),
+        sup: parseOmmlNodes(getDirectChildByTag(el, 'm:sup')),
+      });
+      result.push(...parseOmmlNodes(getDirectChildByTag(el, 'm:e')));
+    } else if (local === 'nary') {
       const pr = getDirectChildByTag(el, 'm:naryPr');
       const chrEl = pr ? getDirectChildByTag(pr, 'm:chr') : null;
       const chr = chrEl?.getAttribute('m:val') || chrEl?.getAttribute('val') || '∫';
@@ -912,18 +1043,20 @@ function parseOmmlNodes(container: Element | null): OmmlMathNode[] {
         sup: parseOmmlNodes(getDirectChildByTag(el, 'm:sup')),
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
       });
-    } else if (tag === 'm:d') {
+    } else if (local === 'd') {
       const pr = getDirectChildByTag(el, 'm:dPr');
       const begEl = pr ? getDirectChildByTag(pr, 'm:begChr') : null;
       const endEl = pr ? getDirectChildByTag(pr, 'm:endChr') : null;
-      const begChr = begEl?.getAttribute('m:val') ?? '(';
-      const endChr = endEl?.getAttribute('m:val') ?? ')';
+      const sepEl = pr ? getDirectChildByTag(pr, 'm:sepChr') : null;
+      const begChr = begEl ? (begEl.getAttribute('m:val') ?? begEl.getAttribute('val') ?? '(') : '(';
+      const endChr = endEl ? (endEl.getAttribute('m:val') ?? endEl.getAttribute('val') ?? ')') : ')';
+      const sepChr = sepEl ? (sepEl.getAttribute('m:val') ?? sepEl.getAttribute('val') ?? ', ') : ', ';
       const innerNodes: OmmlMathNode[] = [];
       const eChildren = Array.from(el.childNodes).filter(
-        n => n.nodeType === 1 && (n as Element).tagName === 'm:e'
+        n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'e'
       ) as Element[];
       eChildren.forEach((eNode, eIdx) => {
-        if (eIdx > 0) innerNodes.push({ type: 'text', text: ', ' });
+        if (eIdx > 0) innerNodes.push({ type: 'text', text: sepChr });
         innerNodes.push(...parseOmmlNodes(eNode));
       });
       result.push({
@@ -932,34 +1065,79 @@ function parseOmmlNodes(container: Element | null): OmmlMathNode[] {
         endChr,
         inner: innerNodes,
       });
-    } else if (tag === 'm:limLow') {
+    } else if (local === 'func') {
+      result.push({
+        type: 'func',
+        fName: parseOmmlNodes(getDirectChildByTag(el, 'm:fName')),
+        arg: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
+      });
+    } else if (local === 'limLow') {
       result.push({
         type: 'limLow',
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
         lim: parseOmmlNodes(getDirectChildByTag(el, 'm:lim')),
       });
-    } else if (tag === 'm:acc' || tag === 'm:bar') {
-      const pr = getDirectChildByTag(el, 'm:accPr');
+    } else if (local === 'limUpp') {
+      result.push({
+        type: 'limUpp',
+        base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
+        lim: parseOmmlNodes(getDirectChildByTag(el, 'm:lim')),
+      });
+    } else if (local === 'acc' || local === 'bar' || local === 'groupChr') {
+      const pr =
+        getDirectChildByTag(el, 'm:accPr') ||
+        getDirectChildByTag(el, 'm:barPr') ||
+        getDirectChildByTag(el, 'm:groupChrPr');
       const chrEl = pr ? getDirectChildByTag(pr, 'm:chr') : null;
-      const chr = chrEl?.getAttribute('m:val') || '⃗';
+      const chr = chrEl?.getAttribute('m:val') || chrEl?.getAttribute('val') || (local === 'bar' ? '¯' : '⃗');
       result.push({
         type: 'acc',
         chr,
         base: parseOmmlNodes(getDirectChildByTag(el, 'm:e')),
       });
-    } else if (tag === 'm:m') {
+    } else if (local === 'eqArr') {
+      const eRows = Array.from(el.childNodes).filter(
+        n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'e'
+      ) as Element[];
+      if (eRows.length > 1) {
+        result.push({
+          type: 'matrix',
+          rows: eRows.map(er => [parseOmmlNodes(er)]),
+        });
+      } else if (eRows.length === 1) {
+        result.push(...parseOmmlNodes(eRows[0]));
+      }
+    } else if (local === 'm') {
       const mRows = Array.from(el.childNodes).filter(
-        n => n.nodeType === 1 && (n as Element).tagName === 'm:mr'
+        n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'mr'
       ) as Element[];
       const parsedRows = mRows.map(mr => {
         const cells = Array.from(mr.childNodes).filter(
-          n => n.nodeType === 1 && (n as Element).tagName === 'm:e'
+          n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'e'
         ) as Element[];
         return cells.map(c => parseOmmlNodes(c));
       });
       result.push({ type: 'matrix', rows: parsedRows });
+    } else if (
+      local === 'oMathPr' ||
+      local === 'rPr' ||
+      local === 'ctrlPr' ||
+      local === 'fPr' ||
+      local === 'radPr' ||
+      local === 'sSupPr' ||
+      local === 'sSubPr' ||
+      local === 'sSubSupPr' ||
+      local === 'dPr' ||
+      local === 'mPr' ||
+      local === 'funcPr' ||
+      local === 'limLowPr' ||
+      local === 'limUppPr' ||
+      local === 'eqArrPr'
+    ) {
+      // Skip metadata/property nodes so they don't emit noise
+      continue;
     } else {
-      // Recurse into wrapper elements like <m:oMath>, <m:box>, <m:func>, <m:eqArr>
+      // Recurse into wrapper elements like <m:oMath>, <m:oMathPara>, <m:box>, <m:e>, <mc:Choice>
       result.push(...parseOmmlNodes(el));
     }
   }
@@ -1130,6 +1308,26 @@ function measureAndDrawOmmlMath(
 
       maxDescent = Math.max(maxDescent, limY + limM.descent - baselineY);
       cursorX += blockW + 4;
+    } else if (node.type === 'limUpp') {
+      const baseM = measureAndDrawOmmlMath(ctx, node.base, 0, 0, fontSize, color, false);
+      const limFont = Math.max(11, fontSize * 0.65);
+      const limM = measureAndDrawOmmlMath(ctx, node.lim, 0, 0, limFont, color, false);
+      const blockW = Math.max(baseM.width, limM.width) + 4;
+      const limY = baselineY - baseM.ascent - limM.descent - 2;
+
+      if (draw) {
+        measureAndDrawOmmlMath(ctx, node.base, cursorX + (blockW - baseM.width) / 2, baselineY, fontSize, color, true);
+        measureAndDrawOmmlMath(ctx, node.lim, cursorX + (blockW - limM.width) / 2, limY, limFont, color, true);
+      }
+
+      maxAscent = Math.max(maxAscent, baselineY - (limY - limM.ascent));
+      cursorX += blockW + 4;
+    } else if (node.type === 'func') {
+      const fnM = measureAndDrawOmmlMath(ctx, node.fName, cursorX, baselineY, fontSize, color, draw);
+      const argM = measureAndDrawOmmlMath(ctx, node.arg, cursorX + fnM.width + 4, baselineY, fontSize, color, draw);
+      maxAscent = Math.max(maxAscent, fnM.ascent, argM.ascent);
+      maxDescent = Math.max(maxDescent, fnM.descent, argM.descent);
+      cursorX += fnM.width + argM.width + 6;
     } else if (node.type === 'delim') {
       const innerM = measureAndDrawOmmlMath(ctx, node.inner, 0, 0, fontSize, color, false);
       const totalH = innerM.ascent + innerM.descent;
@@ -1370,9 +1568,12 @@ export async function convertWordToPdf(
           const node = container.childNodes[i];
           if (node.nodeType !== 1) continue;
           const el = node as Element;
-          const tag = el.tagName;
+          const local = getXmlLocalName(el);
 
-          if (tag === 'm:oMathPara' || tag === 'm:oMath') {
+          if (local === 'oMathPara' || local === 'oMath') {
+            if (local === 'oMathPara' && tokens.length > 0 && tokens[tokens.length - 1].kind !== 'br') {
+              tokens.push({ kind: 'br' });
+            }
             const mathNodes = parseOmmlNodes(el);
             if (mathNodes.length > 0) {
               tokens.push({
@@ -1382,7 +1583,16 @@ export async function convertWordToPdf(
                 color: '#0f172a',
               });
             }
-          } else if (tag === 'w:r') {
+          } else if (local === 'AlternateContent') {
+            // Word 2013-2024 wraps equations & modern drawings in <mc:AlternateContent><mc:Choice>...</mc:Choice><mc:Fallback>...</mc:Fallback></mc:AlternateContent>
+            const choiceEl = getDirectChildByTag(el, 'mc:Choice');
+            const fallbackEl = getDirectChildByTag(el, 'mc:Fallback');
+            if (choiceEl) {
+              walkParagraphChildren(choiceEl);
+            } else if (fallbackEl) {
+              walkParagraphChildren(fallbackEl);
+            }
+          } else if (local === 'r') {
             const rPr = getDirectChildByTag(el, 'w:rPr');
             let bold = forceBold;
             let italic = false;
@@ -1405,33 +1615,34 @@ export async function convertWordToPdf(
                 underline = true;
               }
               const colEl = getDirectChildByTag(rPr, 'w:color');
-              const colVal = colEl?.getAttribute('w:val');
+              const colVal = colEl?.getAttribute('w:val') || colEl?.getAttribute('val');
               if (colVal && colVal !== 'auto' && /^[0-9A-Fa-f]{6}$/.test(colVal)) {
                 color = `#${colVal}`;
               }
               const szEl = getDirectChildByTag(rPr, 'w:sz');
-              const halfPts = parseInt(szEl?.getAttribute('w:sz') || szEl?.getAttribute('w:val') || '0', 10);
+              const halfPts = parseInt(szEl?.getAttribute('w:sz') || szEl?.getAttribute('w:val') || szEl?.getAttribute('val') || '0', 10);
               if (halfPts > 0) {
                 fontSizePx = Math.max(16, Math.min(54, Math.round(halfPts)));
               }
               const vaEl = getDirectChildByTag(rPr, 'w:vertAlign');
-              const vaVal = vaEl?.getAttribute('w:val');
+              const vaVal = vaEl?.getAttribute('w:val') || vaEl?.getAttribute('val');
               if (vaVal === 'superscript' || vaVal === 'subscript') {
                 vertAlign = vaVal;
               }
             }
 
-            // Check for embedded images inside run (<a:blip r:embed="rId..."/> or <v:imagedata r:id="rId..."/>)
+            // Check for embedded images or MathType/Equation Editor OLE objects inside run
             const blips = Array.from(el.getElementsByTagName('a:blip'));
             const vImgs = Array.from(el.getElementsByTagName('v:imagedata'));
             const embedId =
               blips[0]?.getAttribute('r:embed') ||
+              blips[0]?.getAttribute('embed') ||
               vImgs[0]?.getAttribute('r:id') ||
-              vImgs[0]?.getAttribute('o:relid');
+              vImgs[0]?.getAttribute('o:relid') ||
+              vImgs[0]?.getAttribute('id');
 
             if (embedId && imageCache.has(embedId)) {
               const imgObj = imageCache.get(embedId)!;
-              // Check EMU extent (<wp:extent cx="..." cy="..."/>) if present
               const extentEl = el.getElementsByTagName('wp:extent')[0];
               let drawW = Math.min(CONTENT_W * 0.85, imgObj.width * 1.4);
               let drawH = (imgObj.height / Math.max(1, imgObj.width)) * drawW;
@@ -1439,7 +1650,6 @@ export async function convertWordToPdf(
                 const cx = parseInt(extentEl.getAttribute('cx') || '0', 10);
                 const cy = parseInt(extentEl.getAttribute('cy') || '0', 10);
                 if (cx > 0 && cy > 0) {
-                  // 914400 EMUs = 1 inch = 158 px on our 1190px A4 canvas
                   drawW = Math.min(CONTENT_W, Math.round((cx / 914400) * 158));
                   drawH = Math.round((cy / 914400) * 158);
                 }
@@ -1447,15 +1657,60 @@ export async function convertWordToPdf(
               tokens.push({ kind: 'image', img: imgObj, drawW, drawH });
             }
 
-            // Walk run children for <w:t>, <w:tab>, <w:br>
+            // Walk run children for <w:t>, <m:oMath>, <w:sym>, <w:tab>, <w:br>
             for (let k = 0; k < el.childNodes.length; k++) {
               const rChild = el.childNodes[k];
               if (rChild.nodeType !== 1) continue;
               const rChildEl = rChild as Element;
-              if (rChildEl.tagName === 'w:t') {
+              const rLocal = getXmlLocalName(rChildEl);
+
+              if (rLocal === 'oMath' || rLocal === 'oMathPara') {
+                const mathNodes = parseOmmlNodes(rChildEl);
+                if (mathNodes.length > 0) {
+                  tokens.push({
+                    kind: 'math',
+                    mathNodes,
+                    fontSizePx: fontSizePx + 2,
+                    color,
+                  });
+                }
+              } else if (rLocal === 'AlternateContent') {
+                const choiceEl = getDirectChildByTag(rChildEl, 'mc:Choice');
+                if (choiceEl) walkParagraphChildren(choiceEl);
+              } else if (rLocal === 'sym') {
+                const symChar = rChildEl.getAttribute('w:char') || rChildEl.getAttribute('char') || '';
+                if (symChar) {
+                  const code = parseInt(symChar, 16);
+                  if (!isNaN(code)) {
+                    const ch = normalizeMathGlyphs(String.fromCharCode(code > 0xf000 ? code - 0xf000 : code));
+                    tokens.push({
+                      kind: 'text',
+                      text: ch,
+                      bold,
+                      italic,
+                      underline,
+                      color,
+                      fontSizePx,
+                      vertAlign,
+                    });
+                  }
+                }
+              } else if (rLocal === 't') {
                 const rawTxt = normalizeMathGlyphs(rChildEl.textContent || '');
                 if (rawTxt) {
-                  // Split into words while keeping spaces so line wrapping works cleanly
+                  // Automatically upgrade inline LaTeX or linear equations (e.g. \frac{a}{b}, \sqrt{x}, V_{max}) into 2D Math AST!
+                  if (/\\frac|\\dfrac|\\sqrt|\^\{|_\{|\$[A-Za-z0-9\\+\-=^_{}()[\]\s]+\$/.test(rawTxt)) {
+                    const mathNodes = parseLatexOrLinearMathToNodes(rawTxt);
+                    if (mathNodes.length > 0) {
+                      tokens.push({
+                        kind: 'math',
+                        mathNodes,
+                        fontSizePx: fontSizePx + 1,
+                        color,
+                      });
+                      continue;
+                    }
+                  }
                   const parts = rawTxt.match(/\S+|\s+/g) || [rawTxt];
                   for (const pt of parts) {
                     tokens.push({
@@ -1470,7 +1725,7 @@ export async function convertWordToPdf(
                     });
                   }
                 }
-              } else if (rChildEl.tagName === 'w:tab') {
+              } else if (rLocal === 'tab') {
                 tokens.push({
                   kind: 'text',
                   text: '    ',
@@ -1480,11 +1735,18 @@ export async function convertWordToPdf(
                   color,
                   fontSizePx,
                 });
-              } else if (rChildEl.tagName === 'w:br' || rChildEl.tagName === 'w:cr') {
+              } else if (rLocal === 'br' || rLocal === 'cr') {
                 tokens.push({ kind: 'br' });
               }
             }
-          } else if (tag === 'w:hyperlink' || tag === 'w:smartTag' || tag === 'w:sdtContent') {
+          } else if (
+            local === 'hyperlink' ||
+            local === 'smartTag' ||
+            local === 'sdt' ||
+            local === 'sdtContent' ||
+            local === 'ins' ||
+            local === 'fldSimple'
+          ) {
             walkParagraphChildren(el);
           }
         }
@@ -1660,12 +1922,24 @@ export async function convertWordToPdf(
         n => n.nodeType === 1
       ) as Element[];
 
-      for (const el of bodyChildren) {
-        if (el.tagName === 'w:p') {
+      for (let bIdx = 0; bIdx < bodyChildren.length; bIdx++) {
+        const el = bodyChildren[bIdx];
+        const bLocal = getXmlLocalName(el);
+        if (bIdx % 8 === 0) {
+          const pct = Math.min(84, Math.round(35 + (bIdx / Math.max(1, bodyChildren.length)) * 50));
+          onProgress?.(
+            `Đang kết xuất Toán học 2D & Bảng biểu (${pct}%)...`,
+            `Đã dàn trang ${canvases.length} trang A4 • Giữ nguyên 100% công thức, phân số, căn thức, ma trận`,
+            pct
+          );
+          await new Promise(r => setTimeout(r, 12));
+        }
+
+        if (bLocal === 'p') {
           layoutAndRenderParagraph(el, MARGIN_X, CONTENT_W, 24, false, false);
-        } else if (el.tagName === 'w:tbl') {
+        } else if (bLocal === 'tbl') {
           const trEls = Array.from(el.childNodes).filter(
-            n => n.nodeType === 1 && (n as Element).tagName === 'w:tr'
+            n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'tr'
           ) as Element[];
           if (trEls.length === 0) continue;
 
@@ -1673,20 +1947,20 @@ export async function convertWordToPdf(
           const tblGrid = getDirectChildByTag(el, 'w:tblGrid');
           const gridCols = tblGrid
             ? (Array.from(tblGrid.childNodes).filter(
-                n => n.nodeType === 1 && (n as Element).tagName === 'w:gridCol'
+                n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'gridCol'
               ) as Element[])
             : [];
 
           let colRatios: number[] = [];
           if (gridCols.length > 0) {
-            const rawWidths = gridCols.map(gc => Math.max(400, parseInt(gc.getAttribute('w:w') || '1500', 10)));
+            const rawWidths = gridCols.map(gc => Math.max(400, parseInt(gc.getAttribute('w:w') || gc.getAttribute('w') || '1500', 10)));
             const sumW = rawWidths.reduce((a, b) => a + b, 0) || 1;
             colRatios = rawWidths.map(w => w / sumW);
           } else {
             const maxCells = Math.max(
               1,
               ...trEls.map(tr =>
-                Array.from(tr.childNodes).filter(n => n.nodeType === 1 && (n as Element).tagName === 'w:tc').length
+                Array.from(tr.childNodes).filter(n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'tc').length
               )
             );
             colRatios = Array(maxCells).fill(1 / maxCells);
@@ -1694,7 +1968,7 @@ export async function convertWordToPdf(
 
           for (let rIdx = 0; rIdx < trEls.length; rIdx++) {
             const tcEls = Array.from(trEls[rIdx].childNodes).filter(
-              n => n.nodeType === 1 && (n as Element).tagName === 'w:tc'
+              n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'tc'
             ) as Element[];
 
             // First measure height of each cell in this row
@@ -1711,9 +1985,9 @@ export async function convertWordToPdf(
             for (const tc of tcEls) {
               const tcPr = getDirectChildByTag(tc, 'w:tcPr');
               const gridSpanEl = tcPr ? getDirectChildByTag(tcPr, 'w:gridSpan') : null;
-              const span = Math.max(1, parseInt(gridSpanEl?.getAttribute('w:val') || '1', 10));
+              const span = Math.max(1, parseInt(gridSpanEl?.getAttribute('w:val') || gridSpanEl?.getAttribute('val') || '1', 10));
               const shdEl = tcPr ? getDirectChildByTag(tcPr, 'w:shd') : null;
-              const shdFill = shdEl?.getAttribute('w:fill');
+              const shdFill = shdEl?.getAttribute('w:fill') || shdEl?.getAttribute('fill');
               const bgFill =
                 shdFill && shdFill !== 'auto' && /^[0-9A-Fa-f]{6}$/.test(shdFill)
                   ? `#${shdFill}`
@@ -1729,7 +2003,7 @@ export async function convertWordToPdf(
               colCursor += span;
 
               const cellParas = Array.from(tc.childNodes).filter(
-                n => n.nodeType === 1 && (n as Element).tagName === 'w:p'
+                n => n.nodeType === 1 && getXmlLocalName(n as Element) === 'p'
               ) as Element[];
 
               let measuredH = 16;
@@ -3004,6 +3278,286 @@ interface ExcelExtractedCell {
   hasBorder?: boolean;
 }
 
+/**
+ * Resiliently extracts a JSON object or array from an AI response string
+ */
+function parseResilientVisionJson(rawText: string): any {
+  const cleaned = (rawText || '').replace(/```json|```/gi, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      } catch {
+        // Ignore
+      }
+    }
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket >= 0 && lastBracket > firstBracket) {
+      try {
+        return { rows: JSON.parse(cleaned.slice(firstBracket, lastBracket + 1)) };
+      } catch {
+        // Ignore
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * Detects horizontal and vertical table grid lines directly from a 2D Canvas image of a scanned PDF page,
+ * and runs local Tesseract.js OCR ('vie+eng') to populate exact rows and columns in Excel even without an API key!
+ */
+async function extractScannedPageTableViaLocalOcr(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  pageNum: number,
+  totalPages: number,
+  pct: number,
+  onProgress?: ProgressCallback
+): Promise<ExcelExtractedCell[][]> {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // 1. Detect vertical and horizontal dark grid lines from pixel data
+  const imgData = ctx.getImageData(0, 0, w, h).data;
+  const isDarkPixel = (x: number, y: number): boolean => {
+    const idx = (y * w + x) * 4;
+    const r = imgData[idx];
+    const g = imgData[idx + 1];
+    const b = imgData[idx + 2];
+    return (r + g + b) / 3 < 175;
+  };
+
+  const vLineXs: number[] = [];
+  for (let x = Math.round(w * 0.03); x < Math.round(w * 0.97); x += 2) {
+    let darkRun = 0;
+    let maxRun = 0;
+    for (let y = Math.round(h * 0.04); y < Math.round(h * 0.96); y += 3) {
+      if (isDarkPixel(x, y)) {
+        darkRun += 3;
+        if (darkRun > maxRun) maxRun = darkRun;
+      } else {
+        darkRun = 0;
+      }
+    }
+    if (maxRun > h * 0.12) {
+      if (!vLineXs.some(vx => Math.abs(vx - x) <= 14)) {
+        vLineXs.push(x);
+      }
+    }
+  }
+  vLineXs.sort((a, b) => a - b);
+
+  // 2. Run local Tesseract.js OCR (Vietnamese + English) with word/line bounding boxes
+  onProgress?.(
+    `Đang chạy Engine OCR Nội Bộ (Việt/Anh) bóc tách bảng Trang ${pageNum}/${totalPages}...`,
+    'Nhận diện chữ từ ảnh Scan và phân tách hàng/cột tự động',
+    pct
+  );
+
+  try {
+    const loadTesseract = async (): Promise<any> => {
+      if (typeof window === 'undefined') return null;
+      if ((window as any).Tesseract) return (window as any).Tesseract;
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Tesseract CDN load failed'));
+        document.head.appendChild(script);
+      });
+      return (window as any).Tesseract;
+    };
+    const Tesseract = await loadTesseract();
+    if (!Tesseract) return [];
+    const ocrResult = await Tesseract.recognize(canvas, 'vie+eng');
+    const ocrData = ocrResult?.data || {};
+
+    // Collect words with bounding boxes
+    const rawWords: { text: string; x0: number; y0: number; x1: number; y1: number; bold: boolean }[] = [];
+    if (Array.isArray(ocrData.words) && ocrData.words.length > 0) {
+      for (const wd of ocrData.words) {
+        const txt = String(wd.text || '').trim();
+        if (!txt) continue;
+        const bbox = wd.bbox || {};
+        rawWords.push({
+          text: txt,
+          x0: Number(bbox.x0) || 0,
+          y0: Number(bbox.y0) || 0,
+          x1: Number(bbox.x1) || 0,
+          y1: Number(bbox.y1) || 0,
+          bold: Boolean(wd.is_bold) || (Number(bbox.y1) - Number(bbox.y0) > 28),
+        });
+      }
+    } else if (ocrData.text && String(ocrData.text).trim()) {
+      // Fallback if words array isn't populated: split plain text by lines and multi-space/pipe/tab delimiters
+      const plainLines = String(ocrData.text)
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(Boolean);
+      return plainLines.map((lineStr, rIdx) => {
+        const cols = lineStr
+          .split(/\s{2,}|\t|\|/)
+          .map(c => c.trim())
+          .filter(Boolean);
+        return cols.map((colTxt, cIdx) => ({
+          text: colTxt,
+          colIndex: cIdx,
+          colSpan: 1,
+          rowSpan: 1,
+          bgHex: rIdx === 0 ? 'E2E8F0' : null,
+          bold: rIdx === 0,
+          italic: false,
+          align: /^[-+]?\d[\d,./%\s]*$/.test(colTxt) ? 'center' : 'left',
+          hasBorder: true,
+        }));
+      });
+    }
+
+    if (rawWords.length === 0) return [];
+
+    // Group words into horizontal rows by vertical center Y
+    rawWords.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+    const ocrRows: { yCenter: number; height: number; words: typeof rawWords }[] = [];
+    for (const wd of rawWords) {
+      const yMid = (wd.y0 + wd.y1) / 2;
+      const wdH = Math.max(12, wd.y1 - wd.y0);
+      const existingRow = ocrRows.find(r => Math.abs(r.yCenter - yMid) <= Math.max(14, r.height * 0.65));
+      if (existingRow) {
+        existingRow.words.push(wd);
+        existingRow.height = Math.max(existingRow.height, wdH);
+      } else {
+        ocrRows.push({ yCenter: yMid, height: wdH, words: [wd] });
+      }
+    }
+
+    // Group words within each row into horizontal cell segments
+    const segmentedOcrRows = ocrRows.map(row => {
+      row.words.sort((a, b) => a.x0 - b.x0);
+      const segs: { x0: number; x1: number; y0: number; y1: number; text: string; bold: boolean }[] = [];
+      let cur: { x0: number; x1: number; y0: number; y1: number; text: string; bold: boolean } | null = null;
+
+      for (const wd of row.words) {
+        if (!cur) {
+          cur = { ...wd };
+          continue;
+        }
+        const gap = wd.x0 - cur.x1;
+        // Split into a new cell if gap > 26px OR a detected vertical grid line lies between cur.x1 and wd.x0
+        const crossedVLine = vLineXs.some(vx => vx >= cur!.x1 - 4 && vx <= wd.x0 + 4);
+        if (gap > 26 || crossedVLine) {
+          segs.push(cur);
+          cur = { ...wd };
+        } else {
+          cur.text += (wd.text === '|' ? '' : ` ${wd.text}`);
+          cur.x1 = Math.max(cur.x1, wd.x1);
+          cur.y0 = Math.min(cur.y0, wd.y0);
+          cur.y1 = Math.max(cur.y1, wd.y1);
+          cur.bold = cur.bold || wd.bold;
+        }
+      }
+      if (cur) segs.push(cur);
+      return segs.filter(s => s.text.replace(/\|/g, '').trim().length > 0);
+    });
+
+    // Discover column X anchors from vertical grid lines or segment starts
+    const colAnchors: number[] = [];
+    if (vLineXs.length >= 3) {
+      for (let i = 0; i < vLineXs.length - 1; i++) {
+        colAnchors.push(vLineXs[i]);
+      }
+    } else {
+      for (const sRow of segmentedOcrRows) {
+        if (sRow.length >= 2) {
+          for (const seg of sRow) {
+            if (!colAnchors.some(a => Math.abs(a - seg.x0) <= 35)) {
+              colAnchors.push(seg.x0);
+            }
+          }
+        }
+      }
+      colAnchors.sort((a, b) => a - b);
+    }
+
+    const totalCols = Math.max(1, Math.min(16, colAnchors.length || 1));
+    const finalRows: ExcelExtractedCell[][] = [];
+
+    for (const sRow of segmentedOcrRows) {
+      if (sRow.length === 0) continue;
+      if (sRow.length === 1 && totalCols > 1) {
+        const s = sRow[0];
+        const bgHex = sampleCellBackgroundHex(ctx, s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0, w, h);
+        finalRows.push([
+          {
+            text: s.text.replace(/^\|+|\|+$/g, '').trim(),
+            colIndex: 0,
+            colSpan: totalCols,
+            rowSpan: 1,
+            bgHex,
+            bold: s.bold,
+            italic: false,
+            align: s.x0 > w * 0.2 ? 'center' : 'left',
+            hasBorder: true,
+          },
+        ]);
+        continue;
+      }
+
+      const assigned = new Map<number, typeof sRow[0]>();
+      for (const seg of sRow) {
+        let bestCol = 0;
+        let minDist = Infinity;
+        for (let c = 0; c < totalCols; c++) {
+          const d = Math.abs(seg.x0 - (colAnchors[c] || 0));
+          if (d < minDist) {
+            minDist = d;
+            bestCol = c;
+          }
+        }
+        const prev = assigned.get(bestCol);
+        if (prev) {
+          prev.text = `${prev.text} ${seg.text}`;
+          prev.x1 = Math.max(prev.x1, seg.x1);
+          prev.bold = prev.bold || seg.bold;
+        } else {
+          assigned.set(bestCol, { ...seg });
+        }
+      }
+
+      const rowCells: ExcelExtractedCell[] = [];
+      for (let c = 0; c < totalCols; c++) {
+        const seg = assigned.get(c);
+        const cleanTxt = seg ? seg.text.replace(/^\|+|\|+$/g, '').trim() : '';
+        const bgHex = seg
+          ? sampleCellBackgroundHex(ctx, seg.x0, seg.y0, Math.max(30, seg.x1 - seg.x0), Math.max(18, seg.y1 - seg.y0), w, h)
+          : null;
+        rowCells.push({
+          text: cleanTxt,
+          colIndex: c,
+          colSpan: 1,
+          rowSpan: 1,
+          bgHex,
+          bold: Boolean(seg?.bold),
+          italic: false,
+          align: /^[-+]?\d[\d,./%\s]*$/.test(cleanTxt) ? 'center' : 'left',
+          hasBorder: true,
+        });
+      }
+      finalRows.push(rowCells);
+    }
+
+    return finalRows;
+  } catch {
+    return [];
+  }
+}
+
 export async function convertPdfToExcel(
   file: File,
   pageRangeStr = 'ALL',
@@ -3111,9 +3665,10 @@ export async function convertPdfToExcel(
     }
 
     let extractedRowsForPage: ExcelExtractedCell[][] | null = null;
+    const availableKeys = getAvailableKeys(apiKeysStr);
 
-    // 1. Check if page is Scanned PDF (items.length < 5) or user selected 'always' AI Vision OCR
-    if ((items.length < 5 || useAiOcr === 'always') && apiKeysStr) {
+    const runVisionOcrForPage = async (): Promise<ExcelExtractedCell[][] | null> => {
+      if (availableKeys.length === 0) return null;
       try {
         onProgress?.(
           `Đang chạy AI Vision OCR bóc tách bảng biểu Trang ${pageNum}/${totalPages}...`,
@@ -3147,17 +3702,36 @@ Lưu ý:
 - Nếu là tiêu đề gộp nhiều cột, đặt "colSpan" tương ứng (VD: 4, 5...).`;
 
         const visionJson = await callGeminiVisionApi(prompt, jpgDataUrl, 'image/jpeg', apiKeysStr, modelId);
-        const parsed = JSON.parse(visionJson.replace(/```json|```/g, '').trim());
+        const parsed = parseResilientVisionJson(visionJson);
         if (parsed?.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
-          extractedRowsForPage = parsed.rows;
+          return parsed.rows;
         }
       } catch {
-        // Fallback to coordinate + pixel analyzer below
+        // Fallback below
+      }
+      return null;
+    };
+
+    // 1. Check if page is Scanned PDF (items.length < 15) or user selected 'always' AI Vision OCR
+    if (items.length < 15 || useAiOcr === 'always') {
+      extractedRowsForPage = await runVisionOcrForPage();
+      if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
+        const localOcrRows = await extractScannedPageTableViaLocalOcr(
+          canvas,
+          ctx,
+          pageNum,
+          totalPages,
+          pct,
+          onProgress
+        );
+        if (localOcrRows.length > 0) {
+          extractedRowsForPage = localOcrRows;
+        }
       }
     }
 
     // 2. Coordinate + Visual Pixel Color Grid Reconstruction (Lattice & Stream Engine)
-    if (!extractedRowsForPage) {
+    if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
       items.sort((a, b) => b.y - a.y || a.x - b.x);
       const lines: { y: number; height: number; items: ExtractedTextItem[] }[] = [];
       for (const item of items) {
@@ -3364,6 +3938,55 @@ Lưu ý:
 
         extractedRowsForPage.push(rowCells);
       }
+
+      // If coordinate stream extraction found 0 rows or only stray headers while the page has visual table content, run OCR!
+      if (extractedRowsForPage.length < 2) {
+        const visionFallback = await runVisionOcrForPage();
+        if (visionFallback && visionFallback.length > 0) {
+          extractedRowsForPage = visionFallback;
+        } else {
+          const localFallback = await extractScannedPageTableViaLocalOcr(
+            canvas,
+            ctx,
+            pageNum,
+            totalPages,
+            pct,
+            onProgress
+          );
+          if (localFallback.length > extractedRowsForPage.length) {
+            extractedRowsForPage = localFallback;
+          }
+        }
+      }
+    }
+
+    // 2.5. Ultimate Guarantee: If page is a pure graphic/scan where 0 text cells could be extracted, embed the high-res table image directly into the Excel sheet so it is NEVER blank!
+    if (!extractedRowsForPage || extractedRowsForPage.length === 0) {
+      const headerRow = activeSheet.getRow(globalRowCursor);
+      const headerCell = headerRow.getCell(1);
+      headerCell.value = `Bảng biểu / Nội dung Trang ${pageNum} (Bản chụp sắc nét từ PDF Scan)`;
+      headerCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
+      headerRow.height = 26;
+      globalRowCursor++;
+      totalRowsExported++;
+
+      try {
+        const base64Jpg = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+        const imageId = workbook.addImage({
+          base64: base64Jpg,
+          extension: 'jpeg',
+        });
+        const imgRowsSpan = 34;
+        activeSheet.addImage(imageId, {
+          tl: { col: 0, row: globalRowCursor - 1 },
+          ext: { width: Math.round(canvas.width * 0.62), height: Math.round(canvas.height * 0.62) },
+        });
+        globalRowCursor += imgRowsSpan;
+        totalRowsExported += imgRowsSpan;
+      } catch {
+        // Ignore image embed failure
+      }
+      continue;
     }
 
     // 3. Write extracted rows to ExcelJS Worksheet with full colors, borders, merges, and fonts

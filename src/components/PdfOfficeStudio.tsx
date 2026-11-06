@@ -365,6 +365,7 @@ export function PdfOfficeStudio() {
   const [mergeFiles, setMergeFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
 
   // Tool-specific configuration states
   const [pageSelectionMode, setPageSelectionMode] = useState<'ALL' | 'EVEN' | 'ODD' | 'CUSTOM'>('ALL');
@@ -548,9 +549,13 @@ export function PdfOfficeStudio() {
     }
 
     setIsProcessing(true);
+    setProcessingProgress(8);
     setResultBlob(null);
 
     const onProgress = (title: string, subtitle?: string, progress?: number) => {
+      if (typeof progress === 'number') {
+        setProcessingProgress(Math.max(5, Math.min(100, Math.round(progress))));
+      }
       toast.showLoading(title, subtitle, progress);
     };
 
@@ -979,6 +984,7 @@ export function PdfOfficeStudio() {
     } catch (err: any) {
       toast.error('Lỗi xử lý tài liệu', err.message || String(err));
     } finally {
+      setProcessingProgress(100);
       setIsProcessing(false);
       toast.hideLoading();
     }
@@ -1892,7 +1898,7 @@ export function PdfOfficeStudio() {
             className="canva-btn-primary w-full py-4 rounded-2xl text-sm font-black shadow-lg canva-tap flex items-center justify-center gap-3 disabled:opacity-60"
           >
             {isProcessing ? (
-              <AzLogoLoader size="xs" label="AzTool đang xử lý tài liệu..." />
+              <AzLogoLoader size="xs" label="AzTool đang xử lý tài liệu..." progress={processingProgress} />
             ) : (
               <>
                 <Sparkles className="w-5 h-5 text-amber-200" />

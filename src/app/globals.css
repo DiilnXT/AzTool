@@ -176,36 +176,60 @@
    ======================================================== */
 @keyframes drawCalligraphyContinuous {
   0% {
-    stroke-dashoffset: 480;
-    opacity: 0.35;
+    stroke-dashoffset: 100;
+    opacity: 0.45;
   }
-  28%, 76% {
+  30%, 72% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
-  92% {
-    stroke-dashoffset: -480;
+  95%, 100% {
+    stroke-dashoffset: -100;
     opacity: 0.45;
-  }
-  100% {
-    stroke-dashoffset: 480;
-    opacity: 0.35;
   }
 }
 
 @keyframes drawCalligraphyFast {
   0% {
-    stroke-dashoffset: 480;
-    opacity: 0.4;
+    stroke-dashoffset: 100;
+    opacity: 0.55;
   }
-  45%, 70% {
+  42%, 62% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
   100% {
-    stroke-dashoffset: -480;
-    opacity: 0.4;
+    stroke-dashoffset: -100;
+    opacity: 0.55;
   }
+}
+
+@keyframes azOrbitSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes azOrbitReverseSpin {
+  0% {
+    transform: rotate(360deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.az-orbit-spin {
+  animation: azOrbitSpin 1.4s linear infinite;
+  will-change: transform;
+}
+
+.az-orbit-reverse {
+  animation: azOrbitReverseSpin 2.2s linear infinite;
+  will-change: transform;
 }
 
 @keyframes popCalligraphyDotInfinite {
@@ -234,71 +258,83 @@
 
 @keyframes azLogoLoadingPulseMotion {
   0%, 100% {
-    transform: scale(0.98) translateY(0px);
-    filter: drop-shadow(0 0 6px rgba(125, 42, 232, 0.35));
+    transform: scale(0.96) translateY(0px);
+    filter: drop-shadow(0 0 8px rgba(125, 42, 232, 0.45));
   }
   50% {
-    transform: scale(1.04) translateY(-2px);
-    filter: drop-shadow(0 0 14px rgba(0, 196, 204, 0.6));
+    transform: scale(1.06) translateY(-3px);
+    filter: drop-shadow(0 0 18px rgba(0, 196, 204, 0.75));
   }
 }
 
 .az-logo-float {
   animation: azLogoFloatMotion 3.6s ease-in-out infinite;
+  will-change: transform;
 }
 
 .az-logo-loading-pulse {
-  animation: azLogoLoadingPulseMotion 1.4s ease-in-out infinite;
+  animation: azLogoLoadingPulseMotion 1.1s ease-in-out infinite;
+  will-change: transform, filter;
 }
 
 .calligraphy-loop-1 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyContinuous 4.2s cubic-bezier(0.35, 0, 0.25, 1) infinite;
 }
 
 .calligraphy-loop-2 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.18s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyContinuous 4.2s cubic-bezier(0.35, 0, 0.25, 1) 0.16s infinite;
 }
 
 .calligraphy-loop-3 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.36s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyContinuous 4.2s cubic-bezier(0.35, 0, 0.25, 1) 0.32s infinite;
 }
 
 .calligraphy-loop-4 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.35, 0, 0.25, 1) 0.54s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyContinuous 4.2s cubic-bezier(0.35, 0, 0.25, 1) 0.48s infinite;
 }
 
 .calligraphy-loop-5 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyContinuous 5.4s cubic-bezier(0.22, 1, 0.36, 1) 0.72s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyContinuous 4.2s cubic-bezier(0.22, 1, 0.36, 1) 0.64s infinite;
 }
 
 .calligraphy-loop-fast-1 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyFast 1.15s cubic-bezier(0.35, 0, 0.25, 1) infinite;
 }
 
 .calligraphy-loop-fast-2 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.08s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyFast 1.15s cubic-bezier(0.35, 0, 0.25, 1) 0.08s infinite;
 }
 
 .calligraphy-loop-fast-3 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.16s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyFast 1.15s cubic-bezier(0.35, 0, 0.25, 1) 0.16s infinite;
 }
 
 .calligraphy-loop-fast-4 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyFast 1.7s cubic-bezier(0.35, 0, 0.25, 1) 0.24s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyFast 1.15s cubic-bezier(0.35, 0, 0.25, 1) 0.24s infinite;
 }
 
 .calligraphy-loop-fast-5 {
-  stroke-dasharray: 480;
-  animation: drawCalligraphyFast 1.7s cubic-bezier(0.22, 1, 0.36, 1) 0.32s infinite;
+  stroke-dasharray: 100;
+  will-change: stroke-dashoffset;
+  animation: drawCalligraphyFast 1.15s cubic-bezier(0.22, 1, 0.36, 1) 0.32s infinite;
 }
 
 .calligraphy-dot-infinite {
