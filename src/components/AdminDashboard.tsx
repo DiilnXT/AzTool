@@ -92,6 +92,7 @@ export function AdminDashboard() {
   const [addPermStandardize, setAddPermStandardize] = useState(true);
   const [addPermMix, setAddPermMix] = useState(true);
   const [addPermPdfStudio, setAddPermPdfStudio] = useState(true);
+  const [addPermThesisAudit, setAddPermThesisAudit] = useState(true);
 
   // System settings state (Google OAuth Key is permanently hidden in Security Vault)
   const [apiKeyInput, setApiKeyInput] = useState(systemConfig.defaultGeminiApiKey || '');
@@ -131,26 +132,46 @@ export function AdminDashboard() {
     }
   }, [isSuperAdmin, loadAllAdminData]);
 
-  // Combine users from `allUsers`, `permissionsMap`, and `snapshots` so NO teacher ever disappears
+  // Combine users from `allUsers`, `permissionsMap`, and `snapshots` while respecting deleted tombstones
   const combinedTeachers = useMemo(() => {
     const map = new Map<string, UserProfile>();
 
+    let deletedEmailsMap: Record<string, number> = {};
+    if (typeof window !== 'undefined') {
+      try {
+        const rawDel = localStorage.getItem('aztool_deleted_emails');
+        if (rawDel) deletedEmailsMap = JSON.parse(rawDel);
+      } catch {
+        // ignore
+      }
+    }
+
+    const toFivePerms = (raw?: Partial<TabPermissions> | null): TabPermissions => ({
+      canAudit: Boolean(raw?.canAudit),
+      canStandardize: Boolean(raw?.canStandardize),
+      canMix: Boolean(raw?.canMix),
+      canPdfStudio: Boolean(raw?.canPdfStudio),
+      canThesisAudit: Boolean(raw?.canThesisAudit),
+      updatedAt: raw?.updatedAt || 0,
+    });
+
     for (const u of allUsers) {
-      const norm = u.email.toLowerCase();
+      const norm = u.email.trim().toLowerCase();
+      const p = toFivePerms(permissionsMap[norm] || u.permissions);
+      const delTs = deletedEmailsMap[norm] || 0;
+      if (norm !== SUPER_ADMIN_EMAIL.toLowerCase() && delTs > (p.updatedAt || 0) && !permissionsMap[norm]) {
+        continue;
+      }
       map.set(norm, {
         ...u,
-        permissions: permissionsMap[norm] || u.permissions || {
-          canAudit: false,
-          canStandardize: false,
-          canMix: false,
-          canPdfStudio: false,
-        },
+        email: norm,
+        permissions: p,
       });
     }
 
     // Also include any email present in permissionsMap even if not yet in allUsers
     for (const [emailKey, perms] of Object.entries(permissionsMap)) {
-      const norm = emailKey.toLowerCase();
+      const norm = emailKey.trim().toLowerCase();
       if (!map.has(norm)) {
         map.set(norm, {
           id: `perm-${norm}`,
@@ -158,7 +179,7 @@ export function AdminDashboard() {
           displayName: norm.split('@')[0],
           photoURL: `https://api.dicebear.com/7.x/initials/svg?seed=${norm}`,
           role: norm === SUPER_ADMIN_EMAIL.toLowerCase() ? 'super_admin' : 'free',
-          permissions: perms,
+          permissions: toFivePerms(perms),
           createdAt: '2026-01-01',
           lastActive: new Date().toISOString(),
           examsGeneratedCount: 0,
@@ -167,22 +188,22 @@ export function AdminDashboard() {
       }
     }
 
-    // Also auto-discover any teacher who uploaded an exam in snapshots
+    // Also auto-discover any teacher who uploaded an exam in snapshots (if not deleted)
     for (const s of snapshots) {
-      const email = s.userEmail.toLowerCase();
+      const email = s.userEmail.trim().toLowerCase();
       if (!map.has(email)) {
+        const delTs = deletedEmailsMap[email] || 0;
+        const snapTs = s.createdAtIso ? new Date(s.createdAtIso).getTime() : 0;
+        if (email !== SUPER_ADMIN_EMAIL.toLowerCase() && delTs > 0 && delTs >= snapTs && !permissionsMap[email]) {
+          continue;
+        }
         map.set(email, {
           id: `discovered-${s.id}`,
-          email: s.userEmail,
+          email: email,
           displayName: s.userName || s.userEmail.split('@')[0],
           photoURL: s.userAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${s.userEmail}`,
           role: email === SUPER_ADMIN_EMAIL.toLowerCase() ? 'super_admin' : 'free',
-          permissions: permissionsMap[email] || {
-            canAudit: false,
-            canStandardize: false,
-            canMix: false,
-            canPdfStudio: false,
-          },
+          permissions: toFivePerms(permissionsMap[email]),
           createdAt: s.createdAtIso?.split('T')[0] || '2026-01-01',
           lastActive: s.createdAtIso || new Date().toISOString(),
           examsGeneratedCount: 1,
@@ -213,30 +234,36 @@ export function AdminDashboard() {
   }
 
   // --- PERMISSION HANDLERS ---
-  const handleTogglePerm = async (email: string, key: keyof TabPermissions, displayName?: string) => {
-    const norm = email.toLowerCase();
+  const handleTogglePerm = async (
+    email: string,
+    key: 'canAudit' | 'canStandardize' | 'canMix' | 'canPdfStudio' | 'canThesisAudit',
+    displayName?: string
+  ) => {
+    const norm = email.trim().toLowerCase();
     if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return;
 
     const existingUser = combinedTeachers.find(u => u.email.toLowerCase() === norm);
-    const current: TabPermissions = permissionsMap[norm] ||
-      existingUser?.permissions || {
-        canAudit: false,
-        canStandardize: false,
-        canMix: false,
-        canPdfStudio: false,
-      };
+    const rawCurrent = permissionsMap[norm] || existingUser?.permissions;
+    const current: TabPermissions = {
+      canAudit: Boolean(rawCurrent?.canAudit),
+      canStandardize: Boolean(rawCurrent?.canStandardize),
+      canMix: Boolean(rawCurrent?.canMix),
+      canPdfStudio: Boolean(rawCurrent?.canPdfStudio),
+      canThesisAudit: Boolean(rawCurrent?.canThesisAudit),
+    };
 
     const updated: TabPermissions = {
       ...current,
       [key]: !current[key],
+      updatedAt: Date.now(),
     };
 
     await updateUserPermissions(norm, updated, displayName || existingUser?.displayName);
-    const labelMap: Record<keyof TabPermissions, string> = {
+    const labelMap: Record<string, string> = {
       canAudit: '1. AI Soát Lỗi Đề',
       canStandardize: '2. Chuẩn Hóa 1 Chạm',
       canMix: '3. Trộn Mã Đề 25%',
-      canPdfStudio: '4. PDF & Office Studio',
+      canPdfStudio: '4. Cắt & Tách PDF',
       canThesisAudit: '5. Rà Soát Đề Án Word',
     };
     toast.info(
@@ -254,6 +281,7 @@ export function AdminDashboard() {
         canMix: true,
         canPdfStudio: true,
         canThesisAudit: true,
+        updatedAt: Date.now(),
       },
       displayName
     );
@@ -270,6 +298,7 @@ export function AdminDashboard() {
         canMix: false,
         canPdfStudio: false,
         canThesisAudit: false,
+        updatedAt: Date.now(),
       },
       displayName
     );
@@ -287,13 +316,14 @@ export function AdminDashboard() {
       canStandardize: addPermStandardize,
       canMix: addPermMix,
       canPdfStudio: addPermPdfStudio,
-      canThesisAudit: addPermAudit || addPermStandardize,
+      canThesisAudit: addPermThesisAudit,
+      updatedAt: Date.now(),
     };
 
     await updateUserPermissions(email, newPerms, name);
     setAddTeacherEmail('');
     setAddTeacherName('');
-    toast.success('Đã thêm & cấp quyền giáo viên thành công!', `${name} (${email})`);
+    toast.success('Đã lưu & cập nhật quyền giáo viên thành công!', `${name} (${email})`);
     confetti({ particleCount: 40, spread: 50 });
   };
 
@@ -450,7 +480,7 @@ export function AdminDashboard() {
     const isSuper = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
     if (isSuper) return true;
     const p = permissionsMap[u.email.toLowerCase()] || u.permissions;
-    return p?.canAudit || p?.canStandardize || p?.canMix || p?.canPdfStudio;
+    return p?.canAudit || p?.canStandardize || p?.canMix || p?.canPdfStudio || p?.canThesisAudit;
   }).length;
 
   // Filter questions inside preview modal
@@ -751,7 +781,23 @@ export function AdminDashboard() {
                       onChange={e => setAddPermPdfStudio(e.target.checked)}
                       className="rounded text-[#7d2ae8] w-4 h-4"
                     />
-                    <span>4. PDF &amp; Office Studio</span>
+                    <span>4. Cắt &amp; Tách PDF</span>
+                  </label>
+
+                  <label
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
+                      addPermThesisAudit
+                        ? 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={addPermThesisAudit}
+                      onChange={e => setAddPermThesisAudit(e.target.checked)}
+                      className="rounded text-[#7d2ae8] w-4 h-4"
+                    />
+                    <span>5. Đề Án Word</span>
                   </label>
                 </div>
 
@@ -1094,7 +1140,7 @@ export function AdminDashboard() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  deleteUser(u.id);
+                                  void deleteUser(u.email);
                                   toast.info('Đã xóa khỏi danh sách', u.email);
                                 }}
                                 className="p-1.5 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"

@@ -77,6 +77,7 @@ export interface TabPermissions {
   canMix: boolean;
   canPdfStudio?: boolean;
   canThesisAudit?: boolean;
+  updatedAt?: number;
 }
 
 export interface UserProfile {
