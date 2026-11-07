@@ -102,9 +102,15 @@ async function fetchCloudPermsSnapshot(): Promise<{
       if (snap.deletedEmails && typeof snap.deletedEmails === 'object') {
         for (const [em, ts] of Object.entries(snap.deletedEmails)) {
           const norm = em.trim().toLowerCase();
+          if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) continue;
           const numTs = Number(ts) || 0;
           if (!combinedDeleted[norm] || numTs > combinedDeleted[norm]) {
             combinedDeleted[norm] = numTs;
+          }
+          // Evict any earlier cached permission/user if deletion timestamp is newer
+          if (numTs > (combinedPerms[norm]?.updatedAt || 0)) {
+            delete combinedPerms[norm];
+            combinedUsersMap.delete(norm);
           }
         }
       }
@@ -134,18 +140,42 @@ async function fetchCloudPermsSnapshot(): Promise<{
           if (!u?.email) continue;
           const norm = String(u.email).trim().toLowerCase();
           const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
-          const pNorm =
-            combinedPerms[norm] || normalizeClientPermissions(u.permissions, isSuper, 1);
+          const uPerm = normalizeClientPermissions(u.permissions, isSuper, 1);
+          const bestPerm =
+            combinedPerms[norm] &&
+            (combinedPerms[norm].updatedAt || 0) >= (uPerm.updatedAt || 0)
+              ? combinedPerms[norm]
+              : uPerm;
           const delTs = combinedDeleted[norm] || 0;
-          if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+          if (!isSuper && delTs > (bestPerm.updatedAt || 0)) {
+            delete combinedPerms[norm];
             combinedUsersMap.delete(norm);
             continue;
           }
+          if (!isSuper && (bestPerm.updatedAt || 0) > delTs && delTs > 0) {
+            delete combinedDeleted[norm];
+          }
+          combinedPerms[norm] = bestPerm;
+          const prevUser = combinedUsersMap.get(norm);
           combinedUsersMap.set(norm, {
+            ...(prevUser || {}),
             ...u,
             email: norm,
-            permissions: pNorm,
+            displayName: u.displayName || prevUser?.displayName || norm.split('@')[0],
+            permissions: bestPerm,
           });
+        }
+      }
+      // Final sweep to ensure combinedUsersMap has the latest combinedPerms and no deleted emails
+      for (const [norm, uObj] of Array.from(combinedUsersMap.entries())) {
+        const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+        const delTs = combinedDeleted[norm] || 0;
+        const p = combinedPerms[norm] || uObj.permissions;
+        if (!isSuper && delTs > (p?.updatedAt || 0)) {
+          combinedUsersMap.delete(norm);
+          delete combinedPerms[norm];
+        } else if (combinedPerms[norm]) {
+          combinedUsersMap.set(norm, { ...uObj, permissions: combinedPerms[norm] });
         }
       }
     };
@@ -232,6 +262,10 @@ interface AuthContextType {
     email: string,
     perms: TabPermissions,
     displayName?: string
+  ) => Promise<void>;
+  saveBulkPermissions: (
+    bulkMap: Record<string, TabPermissions>,
+    displayNames?: Record<string, string>
   ) => Promise<void>;
   grantAllPermissions: (email: string, displayName?: string) => Promise<void>;
   revokeAllPermissions: (email: string) => Promise<void>;
@@ -332,9 +366,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (srcDeleted && typeof srcDeleted === 'object') {
           for (const [em, dTs] of Object.entries(srcDeleted)) {
             const norm = em.trim().toLowerCase();
+            if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) continue;
             const numTs = Number(dTs) || 0;
             if (!serverDeleted[norm] || numTs > serverDeleted[norm]) {
               serverDeleted[norm] = numTs;
+            }
+            if (numTs > (serverPerms[norm]?.updatedAt || 0)) {
+              delete serverPerms[norm];
+              serverUsersMap.delete(norm);
             }
           }
         }
@@ -364,19 +403,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!su?.email) continue;
             const norm = su.email.trim().toLowerCase();
             const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
-            const pNorm =
-              serverPerms[norm] || normalizeClientPermissions(su.permissions, isSuper, 1);
+            const uPerm = normalizeClientPermissions(su.permissions, isSuper, 1);
+            const bestPerm =
+              serverPerms[norm] &&
+              (serverPerms[norm].updatedAt || 0) >= (uPerm.updatedAt || 0)
+                ? serverPerms[norm]
+                : uPerm;
             const delTs = serverDeleted[norm] || 0;
-            if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+            if (!isSuper && delTs > (bestPerm.updatedAt || 0)) {
+              delete serverPerms[norm];
               serverUsersMap.delete(norm);
               continue;
             }
-            serverPerms[norm] = pNorm;
+            if (!isSuper && (bestPerm.updatedAt || 0) > delTs && delTs > 0) {
+              delete serverDeleted[norm];
+            }
+            serverPerms[norm] = bestPerm;
+            const prevU = serverUsersMap.get(norm);
             serverUsersMap.set(norm, {
+              ...(prevU || {}),
               ...su,
               email: norm,
-              permissions: pNorm,
+              displayName: su.displayName || prevU?.displayName || norm.split('@')[0],
+              permissions: bestPerm,
             });
+          }
+        }
+        for (const [norm, uObj] of Array.from(serverUsersMap.entries())) {
+          const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+          const delTs = serverDeleted[norm] || 0;
+          const p = serverPerms[norm] || uObj.permissions;
+          if (!isSuper && delTs > (p?.updatedAt || 0)) {
+            serverUsersMap.delete(norm);
+            delete serverPerms[norm];
+          } else if (serverPerms[norm]) {
+            serverUsersMap.set(norm, { ...uObj, permissions: serverPerms[norm] });
           }
         }
       };
@@ -928,6 +989,139 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const saveBulkPermissions = async (
+    bulkMap: Record<string, TabPermissions>,
+    displayNames?: Record<string, string>
+  ) => {
+    const nowTs = Date.now();
+    const cleanedPerms: Record<string, TabPermissions> = {
+      [SUPER_ADMIN_EMAIL.toLowerCase()]: { ...superAdminPermissions },
+    };
+
+    for (const [k, v] of Object.entries(permissionsMap)) {
+      cleanedPerms[k.trim().toLowerCase()] = v;
+    }
+
+    const updatedEmailsSet = new Set<string>();
+    for (const [em, p] of Object.entries(bulkMap)) {
+      const norm = em.trim().toLowerCase();
+      if (!norm) continue;
+      updatedEmailsSet.add(norm);
+      const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+      cleanedPerms[norm] = isSuper
+        ? { ...superAdminPermissions }
+        : {
+            canAudit: Boolean(p.canAudit),
+            canStandardize: Boolean(p.canStandardize),
+            canMix: Boolean(p.canMix),
+            canPdfStudio: Boolean(p.canPdfStudio),
+            canThesisAudit: Boolean(p.canThesisAudit),
+            updatedAt: nowTs,
+          };
+    }
+
+    let currentDeletedSnapshot: Record<string, number> = {};
+    try {
+      const rawDel = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
+      if (rawDel) {
+        const parsedDel = JSON.parse(rawDel);
+        if (parsedDel && typeof parsedDel === 'object') {
+          for (const [k, v] of Object.entries(parsedDel)) {
+            const kNorm = k.trim().toLowerCase();
+            if (!updatedEmailsSet.has(kNorm)) {
+              currentDeletedSnapshot[kNorm] = Number(v) || 0;
+            }
+          }
+        }
+      }
+      localStorage.setItem(
+        STORAGE_DELETED_EMAILS_KEY,
+        JSON.stringify(currentDeletedSnapshot)
+      );
+    } catch {
+      // ignore
+    }
+
+    setPermissionsMap(cleanedPerms);
+    localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(cleanedPerms));
+
+    const dedupUsersMap = new Map<string, UserProfile>();
+    for (const u of allUsers) {
+      if (!u?.email) continue;
+      const uNorm = u.email.trim().toLowerCase();
+      dedupUsersMap.set(uNorm, {
+        ...u,
+        email: uNorm,
+        permissions: cleanedPerms[uNorm] || u.permissions,
+      });
+    }
+
+    for (const norm of updatedEmailsSet) {
+      const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+      const existing = dedupUsersMap.get(norm);
+      const customName = displayNames?.[norm]?.trim();
+      if (existing) {
+        dedupUsersMap.set(norm, {
+          ...existing,
+          email: norm,
+          displayName: customName || existing.displayName,
+          permissions: cleanedPerms[norm],
+          lastActive: new Date().toISOString(),
+        });
+      } else {
+        dedupUsersMap.set(norm, {
+          id: `user-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+          email: norm,
+          displayName: customName || norm.split('@')[0],
+          photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
+          role: isSuper ? 'super_admin' : 'free',
+          permissions: cleanedPerms[norm],
+          createdAt: new Date().toISOString().split('T')[0],
+          lastActive: new Date().toISOString(),
+          examsGeneratedCount: 0,
+          mixCount: 0,
+        });
+      }
+    }
+
+    const nextUsersSnapshot = Array.from(dedupUsersMap.values());
+    setAllUsers(nextUsersSnapshot);
+    localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsersSnapshot));
+
+    if (user && cleanedPerms[user.email.trim().toLowerCase()]) {
+      const normSelf = user.email.trim().toLowerCase();
+      const updatedSelf = {
+        ...user,
+        email: normSelf,
+        permissions: cleanedPerms[normSelf],
+      };
+      userRef.current = updatedSelf;
+      setUser(updatedSelf);
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
+    }
+
+    try {
+      await Promise.all([
+        fetch('/api/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bulk: cleanedPerms,
+            bulkUsers: nextUsersSnapshot,
+            bulkDeleted: currentDeletedSnapshot,
+          }),
+        }),
+        publishCloudPermsSnapshot({
+          permissions: cleanedPerms,
+          users: nextUsersSnapshot,
+          deletedEmails: currentDeletedSnapshot,
+        }),
+      ]);
+    } catch (e) {
+      console.warn('saveBulkPermissions error:', e);
+    }
+  };
+
   const grantAllPermissions = async (email: string, displayName?: string) => {
     await updateUserPermissions(
       email,
@@ -1318,6 +1512,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         permissionsMap,
         hasTabAccess,
         updateUserPermissions,
+        saveBulkPermissions,
         grantAllPermissions,
         revokeAllPermissions,
         refreshUsers,

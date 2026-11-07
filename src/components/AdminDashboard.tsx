@@ -48,6 +48,9 @@ import {
   Mail,
   UserCheck,
   FileSpreadsheet,
+  Save,
+  Cloud,
+  CheckCheck,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DeQLogo, AzLogoLoader } from '@/components/DeQLogo';
@@ -59,6 +62,7 @@ export function AdminDashboard() {
     isSuperAdmin,
     permissionsMap,
     updateUserPermissions,
+    saveBulkPermissions,
     grantAllPermissions,
     revokeAllPermissions,
     refreshUsers,
@@ -86,6 +90,15 @@ export function AdminDashboard() {
 
   // User permission management state
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [teacherStatusFilter, setTeacherStatusFilter] = useState<
+    'ALL' | 'AUTHORIZED' | 'LOCKED' | 'UNSAVED'
+  >('ALL');
+  const [draftPermissionsMap, setDraftPermissionsMap] = useState<Record<string, TabPermissions>>({});
+  const [unsavedEmails, setUnsavedEmails] = useState<Record<string, boolean>>({});
+  const [savingEmail, setSavingEmail] = useState<string | null>(null);
+  const [isSavingAllPerms, setIsSavingAllPerms] = useState(false);
+  const [recentlySavedEmails, setRecentlySavedEmails] = useState<Record<string, number>>({});
+
   const [addTeacherEmail, setAddTeacherEmail] = useState('');
   const [addTeacherName, setAddTeacherName] = useState('');
   const [addPermAudit, setAddPermAudit] = useState(true);
@@ -234,6 +247,29 @@ export function AdminDashboard() {
   }
 
   // --- PERMISSION HANDLERS ---
+  const getEffectiveTeacherPerms = (normEmail: string, fallback?: TabPermissions): TabPermissions => {
+    const norm = normEmail.trim().toLowerCase();
+    if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return {
+        canAudit: true,
+        canStandardize: true,
+        canMix: true,
+        canPdfStudio: true,
+        canThesisAudit: true,
+        updatedAt: 9999999999999,
+      };
+    }
+    const raw = draftPermissionsMap[norm] || permissionsMap[norm] || fallback;
+    return {
+      canAudit: Boolean(raw?.canAudit),
+      canStandardize: Boolean(raw?.canStandardize),
+      canMix: Boolean(raw?.canMix),
+      canPdfStudio: Boolean(raw?.canPdfStudio),
+      canThesisAudit: Boolean(raw?.canThesisAudit),
+      updatedAt: raw?.updatedAt || 0,
+    };
+  };
+
   const handleTogglePerm = async (
     email: string,
     key: 'canAudit' | 'canStandardize' | 'canMix' | 'canPdfStudio' | 'canThesisAudit',
@@ -243,14 +279,7 @@ export function AdminDashboard() {
     if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return;
 
     const existingUser = combinedTeachers.find(u => u.email.toLowerCase() === norm);
-    const rawCurrent = permissionsMap[norm] || existingUser?.permissions;
-    const current: TabPermissions = {
-      canAudit: Boolean(rawCurrent?.canAudit),
-      canStandardize: Boolean(rawCurrent?.canStandardize),
-      canMix: Boolean(rawCurrent?.canMix),
-      canPdfStudio: Boolean(rawCurrent?.canPdfStudio),
-      canThesisAudit: Boolean(rawCurrent?.canThesisAudit),
-    };
+    const current = getEffectiveTeacherPerms(norm, existingUser?.permissions);
 
     const updated: TabPermissions = {
       ...current,
@@ -258,51 +287,153 @@ export function AdminDashboard() {
       updatedAt: Date.now(),
     };
 
+    setDraftPermissionsMap(prev => ({ ...prev, [norm]: updated }));
+    setUnsavedEmails(prev => ({ ...prev, [norm]: true }));
+
+    // Auto-sync immediately in background AND allow explicit Save confirmation button
     await updateUserPermissions(norm, updated, displayName || existingUser?.displayName);
     const labelMap: Record<string, string> = {
       canAudit: '1. AI Soát Lỗi Đề',
       canStandardize: '2. Chuẩn Hóa 1 Chạm',
       canMix: '3. Trộn Mã Đề 25%',
-      canPdfStudio: '4. Cắt & Tách PDF',
+      canPdfStudio: '4. Dịch PDF Pro & Cắt PDF',
       canThesisAudit: '5. Rà Soát Đề Án Word',
     };
     toast.info(
-      `${updated[key] ? 'Đã BẬT quyền' : 'Đã KHÓA quyền'}`,
-      `${norm} → ${labelMap[key]}`
+      `${updated[key] ? 'Đã BẬT' : 'Đã KHÓA'}: ${labelMap[key]}`,
+      `Bấm nút "Lưu Quyền" ở dòng ${norm} để khóa xác nhận đồng bộ Cloud!`
     );
   };
 
+  const handleSaveTeacherPerms = async (email: string, displayName?: string) => {
+    const norm = email.trim().toLowerCase();
+    if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) return;
+
+    setSavingEmail(norm);
+    try {
+      const existingUser = combinedTeachers.find(u => u.email.toLowerCase() === norm);
+      const current = getEffectiveTeacherPerms(norm, existingUser?.permissions);
+      const finalPerms: TabPermissions = {
+        canAudit: Boolean(current.canAudit),
+        canStandardize: Boolean(current.canStandardize),
+        canMix: Boolean(current.canMix),
+        canPdfStudio: Boolean(current.canPdfStudio),
+        canThesisAudit: Boolean(current.canThesisAudit),
+        updatedAt: Date.now(),
+      };
+
+      await updateUserPermissions(norm, finalPerms, displayName || existingUser?.displayName);
+      setDraftPermissionsMap(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setUnsavedEmails(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setRecentlySavedEmails(prev => ({ ...prev, [norm]: Date.now() }));
+
+      toast.success(
+        'Đã Lưu & Đồng Bộ Phân Quyền Lên Cloud!',
+        `Tài khoản ${norm} đã cập nhật quyền mở/khóa thời gian thực.`
+      );
+      confetti({ particleCount: 35, spread: 50 });
+    } finally {
+      setSavingEmail(null);
+    }
+  };
+
+  const handleSaveAllPermissions = async () => {
+    setIsSavingAllPerms(true);
+    try {
+      const bulkMap: Record<string, TabPermissions> = {};
+      const displayNames: Record<string, string> = {};
+      const nowSaved: Record<string, number> = {};
+
+      for (const u of combinedTeachers) {
+        const norm = u.email.trim().toLowerCase();
+        if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) continue;
+        bulkMap[norm] = getEffectiveTeacherPerms(norm, u.permissions);
+        displayNames[norm] = u.displayName;
+        nowSaved[norm] = Date.now();
+      }
+
+      await saveBulkPermissions(bulkMap, displayNames);
+      setDraftPermissionsMap({});
+      setUnsavedEmails({});
+      setRecentlySavedEmails(prev => ({ ...prev, ...nowSaved }));
+
+      toast.success(
+        'Đã Lưu Toàn Bộ Bảng Phân Quyền Lên Cloud!',
+        `Đã đồng bộ ${Object.keys(bulkMap).length} tài khoản giáo viên xuyên suốt mọi thiết bị.`
+      );
+      confetti({ particleCount: 55, spread: 65 });
+    } finally {
+      setIsSavingAllPerms(false);
+    }
+  };
+
   const handleGrantAll = async (email: string, displayName?: string) => {
-    await updateUserPermissions(
-      email,
-      {
+    const norm = email.trim().toLowerCase();
+    setSavingEmail(norm);
+    try {
+      const allOpen: TabPermissions = {
         canAudit: true,
         canStandardize: true,
         canMix: true,
         canPdfStudio: true,
         canThesisAudit: true,
         updatedAt: Date.now(),
-      },
-      displayName
-    );
-    toast.success('Đã mở khóa toàn bộ tính năng!', `Tài khoản ${email} đã được cấp toàn quyền.`);
-    confetti({ particleCount: 30, spread: 45 });
+      };
+      await updateUserPermissions(norm, allOpen, displayName);
+      setDraftPermissionsMap(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setUnsavedEmails(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setRecentlySavedEmails(prev => ({ ...prev, [norm]: Date.now() }));
+      toast.success('Đã Mở Toàn Quyền & Lưu Cloud!', `Tài khoản ${norm} đã mở cả 5 tính năng.`);
+      confetti({ particleCount: 30, spread: 45 });
+    } finally {
+      setSavingEmail(null);
+    }
   };
 
   const handleRevokeAll = async (email: string, displayName?: string) => {
-    await updateUserPermissions(
-      email,
-      {
+    const norm = email.trim().toLowerCase();
+    setSavingEmail(norm);
+    try {
+      const allLocked: TabPermissions = {
         canAudit: false,
         canStandardize: false,
         canMix: false,
         canPdfStudio: false,
         canThesisAudit: false,
         updatedAt: Date.now(),
-      },
-      displayName
-    );
-    toast.warning('Đã thu hồi toàn bộ quyền!', `Tài khoản ${email} hiện đang bị khóa.`);
+      };
+      await updateUserPermissions(norm, allLocked, displayName);
+      setDraftPermissionsMap(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setUnsavedEmails(prev => {
+        const next = { ...prev };
+        delete next[norm];
+        return next;
+      });
+      setRecentlySavedEmails(prev => ({ ...prev, [norm]: Date.now() }));
+      toast.warning('Đã Khóa Toàn Bộ & Lưu Cloud!', `Tài khoản ${norm} hiện đang bị khóa cả 5 tab.`);
+    } finally {
+      setSavingEmail(null);
+    }
   };
 
   const handleAddNewTeacherWithPerms = async (e: React.FormEvent) => {
@@ -311,20 +442,36 @@ export function AdminDashboard() {
 
     const email = addTeacherEmail.trim().toLowerCase();
     const name = addTeacherName.trim() || email.split('@')[0];
-    const newPerms: TabPermissions = {
-      canAudit: addPermAudit,
-      canStandardize: addPermStandardize,
-      canMix: addPermMix,
-      canPdfStudio: addPermPdfStudio,
-      canThesisAudit: addPermThesisAudit,
-      updatedAt: Date.now(),
-    };
+    setSavingEmail(email);
+    try {
+      const newPerms: TabPermissions = {
+        canAudit: addPermAudit,
+        canStandardize: addPermStandardize,
+        canMix: addPermMix,
+        canPdfStudio: addPermPdfStudio,
+        canThesisAudit: addPermThesisAudit,
+        updatedAt: Date.now(),
+      };
 
-    await updateUserPermissions(email, newPerms, name);
-    setAddTeacherEmail('');
-    setAddTeacherName('');
-    toast.success('Đã lưu & cập nhật quyền giáo viên thành công!', `${name} (${email})`);
-    confetti({ particleCount: 40, spread: 50 });
+      await updateUserPermissions(email, newPerms, name);
+      setDraftPermissionsMap(prev => {
+        const next = { ...prev };
+        delete next[email];
+        return next;
+      });
+      setUnsavedEmails(prev => {
+        const next = { ...prev };
+        delete next[email];
+        return next;
+      });
+      setRecentlySavedEmails(prev => ({ ...prev, [email]: Date.now() }));
+      setAddTeacherEmail('');
+      setAddTeacherName('');
+      toast.success('Đã thêm & lưu quyền giáo viên lên Cloud!', `${name} (${email})`);
+      confetti({ particleCount: 40, spread: 50 });
+    } finally {
+      setSavingEmail(null);
+    }
   };
 
   // --- VAULT HANDLERS ---
@@ -469,19 +616,33 @@ export function AdminDashboard() {
   const totalStorageMB = (totalStorageBytes / (1024 * 1024)).toFixed(2);
   const unviewedCount = snapshots.filter(s => !s.isViewed).length;
 
+  const authorizedCount = combinedTeachers.filter(u => {
+    const norm = u.email.toLowerCase();
+    const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+    if (isSuper) return true;
+    const p = getEffectiveTeacherPerms(norm, u.permissions);
+    return p.canAudit || p.canStandardize || p.canMix || p.canPdfStudio || p.canThesisAudit;
+  }).length;
+
+  const lockedCount = Math.max(0, combinedTeachers.length - authorizedCount);
+  const unsavedCount = Object.keys(unsavedEmails).length;
+
   // Filter Teachers for Permissions Tab
   const filteredTeachers = combinedTeachers.filter(u => {
+    const norm = u.email.toLowerCase();
+    const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+    const p = getEffectiveTeacherPerms(norm, u.permissions);
+    const hasAnyPerm =
+      isSuper || p.canAudit || p.canStandardize || p.canMix || p.canPdfStudio || p.canThesisAudit;
+
+    if (teacherStatusFilter === 'AUTHORIZED' && !hasAnyPerm) return false;
+    if (teacherStatusFilter === 'LOCKED' && hasAnyPerm) return false;
+    if (teacherStatusFilter === 'UNSAVED' && !unsavedEmails[norm]) return false;
+
     if (!userSearchQuery.trim()) return true;
     const q = userSearchQuery.toLowerCase();
     return u.displayName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
   });
-
-  const authorizedCount = combinedTeachers.filter(u => {
-    const isSuper = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-    if (isSuper) return true;
-    const p = permissionsMap[u.email.toLowerCase()] || u.permissions;
-    return p?.canAudit || p?.canStandardize || p?.canMix || p?.canPdfStudio || p?.canThesisAudit;
-  }).length;
 
   // Filter questions inside preview modal
   const filteredPreviewQuestions = useMemo(() => {
@@ -674,19 +835,114 @@ export function AdminDashboard() {
       {/* ===================================================================== */}
       {activeSubTab === 'permissions' && (
         <div className="space-y-6 tab-enter">
+          {/* 4 KPI EXECUTIVE OVERVIEW CARDS */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="canva-card p-4 rounded-2xl border border-purple-200/80 dark:border-purple-900/50 bg-gradient-to-br from-purple-50/80 to-white dark:from-purple-950/30 dark:to-[#151821]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                  Tổng Tài Khoản
+                </span>
+                <Users className="w-4 h-4 text-[#7d2ae8]" />
+              </div>
+              <div className="text-2xl font-black text-neutral-900 dark:text-white mt-1.5">
+                {combinedTeachers.length}
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                Giáo viên &amp; Quản trị viên
+              </p>
+            </div>
+
+            <div className="canva-card p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/30 dark:to-[#151821]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  Đã Cấp Quyền
+                </span>
+                <Unlock className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1.5">
+                {authorizedCount}
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                Đang mở ít nhất 1 tính năng
+              </p>
+            </div>
+
+            <div className="canva-card p-4 rounded-2xl border border-rose-200/80 dark:border-rose-900/50 bg-gradient-to-br from-rose-50/80 to-white dark:from-rose-950/30 dark:to-[#151821]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-300">
+                  Đang Tạm Khóa
+                </span>
+                <Lock className="w-4 h-4 text-rose-600" />
+              </div>
+              <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1.5">
+                {lockedCount}
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                Chưa mở quyền hoặc đã thu hồi
+              </p>
+            </div>
+
+            <div className="canva-card p-4 rounded-2xl border border-cyan-200/80 dark:border-cyan-900/50 bg-gradient-to-br from-cyan-50/80 to-white dark:from-cyan-950/30 dark:to-[#151821]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">
+                  Đồng Bộ Cloud v5
+                </span>
+                <Cloud className="w-4 h-4 text-cyan-600" />
+              </div>
+              <div className="text-sm sm:text-base font-black text-cyan-700 dark:text-cyan-300 mt-2 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Realtime 100%</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
+                Tự lưu bền vững xuyên Vercel
+              </p>
+            </div>
+          </div>
+
           {/* ALWAYS-VISIBLE QUICK ADD & GRANT CARD */}
           <div className="canva-card p-6 rounded-3xl border-2 border-[#7d2ae8]/25 bg-gradient-to-br from-purple-50/60 via-white to-cyan-50/40 dark:from-purple-950/20 dark:via-[#151821] dark:to-cyan-950/10 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#7d2ae8] to-[#00c4cc] text-white flex items-center justify-center shadow-xs">
-                <UserPlus className="w-4 h-4" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#7d2ae8] to-[#00c4cc] text-white flex items-center justify-center shadow-sm">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
+                    Thêm Giáo Viên Mới Hoặc Cấp Lại Quyền Theo Gmail
+                  </h3>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Nhập địa chỉ Gmail giáo viên (kể cả giáo viên từng thêm hoặc đã xóa trước đó) và bấm <strong>Thêm &amp; Lưu Quyền Ngay</strong> để áp dụng tức thì.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
-                  Thêm Giáo Viên Mới &amp; Cấp Quyền Sử Dụng Ngay
-                </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Nhập địa chỉ Gmail của giáo viên để cấp quyền trước hoặc cập nhật quyền ngay lập tức. Không bao giờ bị mất khỏi danh sách.
-                </p>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddPermAudit(true);
+                    setAddPermStandardize(true);
+                    setAddPermMix(true);
+                    setAddPermPdfStudio(true);
+                    setAddPermThesisAudit(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-extrabold hover:bg-emerald-200 transition"
+                >
+                  Chọn cả 5 quyền
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddPermAudit(false);
+                    setAddPermStandardize(false);
+                    setAddPermMix(false);
+                    setAddPermPdfStudio(false);
+                    setAddPermThesisAudit(false);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-200/70 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-[11px] font-bold hover:bg-neutral-300 transition"
+                >
+                  Bỏ chọn hết
+                </button>
               </div>
             </div>
 
@@ -707,7 +963,7 @@ export function AdminDashboard() {
                   <UserCheck className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Họ và tên giáo viên (VD: Cô Nguyễn Thị A)..."
+                    placeholder="Họ và tên hiển thị (VD: Cô Nguyễn Thị A)..."
                     value={addTeacherName}
                     onChange={e => setAddTeacherName(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs sm:text-sm font-semibold text-neutral-900 dark:text-white outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
@@ -715,15 +971,15 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 border-t border-neutral-200/70 dark:border-neutral-800">
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <span className="font-extrabold text-neutral-700 dark:text-neutral-300">
-                    Chọn tab mở khóa:
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-2 border-t border-neutral-200/70 dark:border-neutral-800">
+                <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                  <span className="font-extrabold text-neutral-700 dark:text-neutral-300 mr-1">
+                    Cấp quyền 5 phân hệ:
                   </span>
                   <label
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
                       addPermAudit
-                        ? 'border-cyan-500 bg-cyan-50/80 dark:bg-cyan-950/50 text-cyan-900 dark:text-cyan-200'
+                        ? 'border-cyan-500 bg-cyan-50/90 dark:bg-cyan-950/60 text-cyan-900 dark:text-cyan-200 shadow-2xs'
                         : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
                     }`}
                   >
@@ -739,7 +995,7 @@ export function AdminDashboard() {
                   <label
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
                       addPermStandardize
-                        ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-200'
+                        ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 shadow-2xs'
                         : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
                     }`}
                   >
@@ -755,7 +1011,7 @@ export function AdminDashboard() {
                   <label
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
                       addPermMix
-                        ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200'
+                        ? 'border-purple-500 bg-purple-50/90 dark:bg-purple-950/60 text-purple-900 dark:text-purple-200 shadow-2xs'
                         : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
                     }`}
                   >
@@ -771,7 +1027,7 @@ export function AdminDashboard() {
                   <label
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
                       addPermPdfStudio
-                        ? 'border-rose-500 bg-rose-50/80 dark:bg-rose-950/50 text-rose-900 dark:text-rose-200'
+                        ? 'border-rose-500 bg-rose-50/90 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200 shadow-2xs'
                         : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
                     }`}
                   >
@@ -781,13 +1037,13 @@ export function AdminDashboard() {
                       onChange={e => setAddPermPdfStudio(e.target.checked)}
                       className="rounded text-[#7d2ae8] w-4 h-4"
                     />
-                    <span>4. Cắt &amp; Tách PDF</span>
+                    <span>4. Dịch PDF Pro &amp; Cắt PDF</span>
                   </label>
 
                   <label
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer font-bold transition ${
                       addPermThesisAudit
-                        ? 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200'
+                        ? 'border-indigo-500 bg-indigo-50/90 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-200 shadow-2xs'
                         : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500'
                     }`}
                   >
@@ -797,42 +1053,134 @@ export function AdminDashboard() {
                       onChange={e => setAddPermThesisAudit(e.target.checked)}
                       className="rounded text-[#7d2ae8] w-4 h-4"
                     />
-                    <span>5. Đề Án Word</span>
+                    <span>5. Rà Soát Đề Án Word</span>
                   </label>
                 </div>
 
                 <button
                   type="submit"
+                  disabled={savingEmail !== null}
                   className="canva-btn-primary px-6 py-3 rounded-xl text-xs sm:text-sm font-black shadow-md canva-tap flex items-center justify-center gap-2 shrink-0"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  <span>+ Thêm &amp; Lưu Quyền Ngay</span>
+                  <Save className="w-4 h-4" />
+                  <span>+ Thêm &amp; Lưu Quyền Lên Cloud</span>
                 </button>
               </div>
             </form>
           </div>
 
           {/* Teacher Permissions Matrix Card */}
-          <div className="canva-card p-6 space-y-4 rounded-3xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs bg-white dark:bg-[#151821]">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="canva-card p-6 space-y-5 rounded-3xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs bg-white dark:bg-[#151821]">
+            {/* Top Header & Global Save Action */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-neutral-200/80 dark:border-neutral-800">
               <div>
                 <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
                   <Users className="w-5 h-5 text-[#7d2ae8]" />
-                  <span>Danh Sách Giáo Viên &amp; Bảng Công Tắc Phân Quyền ({filteredTeachers.length})</span>
+                  <span>
+                    Bảng Quản Lý &amp; Phân Quyền Giáo Viên ({filteredTeachers.length}/{combinedTeachers.length})
+                  </span>
+                  {unsavedCount > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[11px] font-black animate-pulse">
+                      {unsavedCount} tài khoản vừa chỉnh sửa
+                    </span>
+                  )}
                 </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  Bấm trực tiếp vào từng công tắc để Mở hoặc Khóa từng tính năng cho giáo viên.
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  Bật/tắt công tắc từng tính năng và bấm nút <strong>&ldquo;Lưu Quyền&rdquo;</strong> trên dòng giáo viên (hoặc nút <strong>&ldquo;Lưu &amp; Đồng Bộ Tất Cả&rdquo;</strong> bên phải) để khóa quyền lên Cloud.
                 </p>
               </div>
 
-              {/* Search Input */}
-              <div className="relative w-full sm:w-72">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => void loadAllAdminData(true)}
+                  disabled={isRefreshingAll}
+                  className="px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 text-xs font-extrabold hover:bg-neutral-100 dark:hover:bg-neutral-800 transition flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin' : ''}`} />
+                  <span>Tải Lại Cloud</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleSaveAllPermissions()}
+                  disabled={isSavingAllPerms}
+                  className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-black shadow-md canva-tap flex items-center gap-2 transition ${
+                    unsavedCount > 0
+                      ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white ring-2 ring-emerald-400/60 animate-pulse'
+                      : 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white hover:opacity-95'
+                  }`}
+                >
+                  <Save className={`w-4 h-4 ${isSavingAllPerms ? 'animate-spin' : ''}`} />
+                  <span>
+                    {isSavingAllPerms
+                      ? 'Đang Lưu Lên Cloud...'
+                      : unsavedCount > 0
+                      ? `Lưu & Đồng Bộ Tất Cả (${unsavedCount} thay đổi)`
+                      : 'Lưu & Đồng Bộ Tất Cả Phân Quyền'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Pills & Search Input */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTeacherStatusFilter('ALL')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                    teacherStatusFilter === 'ALL'
+                      ? 'bg-[#7d2ae8] text-white shadow-xs'
+                      : 'bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/70'
+                  }`}
+                >
+                  Tất cả ({combinedTeachers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherStatusFilter('AUTHORIZED')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                    teacherStatusFilter === 'AUTHORIZED'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+                  }`}
+                >
+                  Đã cấp quyền ({authorizedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherStatusFilter('LOCKED')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                    teacherStatusFilter === 'LOCKED'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
+                  }`}
+                >
+                  Đang khóa ({lockedCount})
+                </button>
+                {unsavedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTeacherStatusFilter('UNSAVED')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                      teacherStatusFilter === 'UNSAVED'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    Cần bấm lưu ({unsavedCount})
+                  </button>
+                )}
+              </div>
+
+              <div className="relative w-full md:w-80">
                 <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={userSearchQuery}
                   onChange={e => setUserSearchQuery(e.target.value)}
-                  placeholder="Tìm tên hoặc Gmail giáo viên..."
+                  placeholder="Tìm nhanh theo tên hoặc Gmail giáo viên..."
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-xs font-semibold outline-hidden focus:ring-2 focus:ring-[#7d2ae8]"
                 />
               </div>
@@ -842,8 +1190,8 @@ export function AdminDashboard() {
             <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 font-extrabold bg-neutral-100/80 dark:bg-neutral-900/90">
-                    <th className="py-3.5 px-4">Giáo Viên / Tài Khoản Gmail</th>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 font-extrabold bg-neutral-100/90 dark:bg-neutral-900/90">
+                    <th className="py-3.5 px-4 min-w-[240px]">Giáo Viên / Tài Khoản Gmail</th>
                     <th className="py-3.5 px-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
                         <Sparkles className="w-3.5 h-3.5" />
@@ -874,29 +1222,18 @@ export function AdminDashboard() {
                         <span>5. Đề Án Word</span>
                       </div>
                     </th>
-                    <th className="py-3.5 px-4 text-right">Thao Tác Nhanh</th>
+                    <th className="py-3.5 px-4 text-right min-w-[270px]">Lưu &amp; Thao Tác Nhanh</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200/70 dark:divide-neutral-800">
                   {filteredTeachers.map(u => {
                     const normEmail = u.email.toLowerCase();
                     const isSuper = normEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-                    const perms: TabPermissions = isSuper
-                      ? {
-                          canAudit: true,
-                          canStandardize: true,
-                          canMix: true,
-                          canPdfStudio: true,
-                          canThesisAudit: true,
-                        }
-                      : permissionsMap[normEmail] ||
-                        u.permissions || {
-                          canAudit: false,
-                          canStandardize: false,
-                          canMix: false,
-                          canPdfStudio: false,
-                          canThesisAudit: false,
-                        };
+                    const perms = getEffectiveTeacherPerms(normEmail, u.permissions);
+                    const isUnsaved = Boolean(unsavedEmails[normEmail]);
+                    const isSavingRow = savingEmail === normEmail;
+                    const wasRecentlySaved =
+                      Boolean(recentlySavedEmails[normEmail]) && !isUnsaved;
 
                     const userSavedCount = snapshots.filter(
                       s => s.userEmail.toLowerCase() === normEmail
@@ -912,7 +1249,11 @@ export function AdminDashboard() {
                     return (
                       <tr
                         key={normEmail}
-                        className="hover:bg-purple-50/40 dark:hover:bg-neutral-800/40 transition"
+                        className={`transition ${
+                          isUnsaved
+                            ? 'bg-amber-50/70 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                            : 'hover:bg-purple-50/40 dark:hover:bg-neutral-800/40'
+                        }`}
                       >
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
@@ -925,7 +1266,7 @@ export function AdminDashboard() {
                               className="w-10 h-10 rounded-2xl border border-neutral-200 dark:border-neutral-700 shrink-0 shadow-2xs"
                             />
                             <div>
-                              <div className="font-black text-xs sm:text-sm text-neutral-900 dark:text-white flex items-center gap-2">
+                              <div className="font-black text-xs sm:text-sm text-neutral-900 dark:text-white flex flex-wrap items-center gap-2">
                                 <span>{u.displayName}</span>
                                 {isSuper ? (
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">
@@ -933,11 +1274,22 @@ export function AdminDashboard() {
                                   </span>
                                 ) : activeTabsCount > 0 ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
-                                    Đang mở {activeTabsCount}/5 tính năng
+                                    Đang mở {activeTabsCount}/5 quyền
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300">
                                     Đang khóa hết
+                                  </span>
+                                )}
+                                {isUnsaved && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
+                                    Vừa sửa • Bấm Lưu
+                                  </span>
+                                )}
+                                {wasRecentlySaved && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 inline-flex items-center gap-1">
+                                    <CheckCheck className="w-3 h-3" />
+                                    Đã lưu Cloud
                                   </span>
                                 )}
                               </div>
@@ -945,14 +1297,14 @@ export function AdminDashboard() {
                                 {u.email}
                               </div>
                               <div className="text-[11px] text-neutral-400 mt-0.5">
-                                Đã lưu <strong>{userSavedCount}</strong> đề trong kho lưu trữ
+                                Đã đẩy lên <strong>{userSavedCount}</strong> đề trong Kho Đề Thi
                               </div>
                             </div>
                           </div>
                         </td>
 
                         {/* Col 1: AI Audit Switch */}
-                        <td className="py-4 px-2.5 text-center">
+                        <td className="py-4 px-2 text-center">
                           {isSuper ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -984,7 +1336,7 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 2: Standardize Switch */}
-                        <td className="py-4 px-2.5 text-center">
+                        <td className="py-4 px-2 text-center">
                           {isSuper ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1018,7 +1370,7 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 3: Mix Switch */}
-                        <td className="py-4 px-2.5 text-center">
+                        <td className="py-4 px-2 text-center">
                           {isSuper ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1050,7 +1402,7 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 4: PDF & Office Studio Switch */}
-                        <td className="py-4 px-2.5 text-center">
+                        <td className="py-4 px-2 text-center">
                           {isSuper ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1084,7 +1436,7 @@ export function AdminDashboard() {
                         </td>
 
                         {/* Col 5: Thesis Word Auditor Switch */}
-                        <td className="py-4 px-2.5 text-center">
+                        <td className="py-4 px-2 text-center">
                           {isSuper ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1117,34 +1469,63 @@ export function AdminDashboard() {
                           )}
                         </td>
 
-                        {/* Col 6: Quick Actions */}
+                        {/* Col 6: Save Button + Quick Actions */}
                         <td className="py-4 px-4 text-right">
                           {!isSuper && (
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveTeacherPerms(u.email, u.displayName)}
+                                disabled={isSavingRow}
+                                className={`px-3.5 py-1.5 rounded-xl font-black text-[11px] transition-all canva-tap inline-flex items-center gap-1.5 shadow-xs ${
+                                  isUnsaved
+                                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white ring-2 ring-emerald-400/70 animate-pulse'
+                                    : 'bg-[#7d2ae8] hover:bg-[#681ed0] text-white'
+                                }`}
+                                title="Lưu & Đồng bộ quyền của giáo viên này lên Cloud"
+                              >
+                                <Save className={`w-3.5 h-3.5 ${isSavingRow ? 'animate-spin' : ''}`} />
+                                <span>{isSavingRow ? 'Đang lưu...' : 'Lưu Quyền'}</span>
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => void handleGrantAll(u.email, u.displayName)}
-                                className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 font-extrabold text-[11px] hover:bg-emerald-200 transition canva-tap"
-                                title="Mở khóa toàn bộ tính năng cho giáo viên này"
+                                disabled={isSavingRow}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 font-extrabold text-[11px] hover:bg-emerald-200 transition canva-tap"
+                                title="Mở khóa toàn bộ 5 tính năng và Lưu ngay"
                               >
                                 Mở hết
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => void handleRevokeAll(u.email, u.displayName)}
-                                className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 font-extrabold text-[11px] hover:bg-amber-200 transition canva-tap"
-                                title="Khóa cả 4 tab của giáo viên này"
+                                disabled={isSavingRow}
+                                className="px-2.5 py-1.5 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 font-extrabold text-[11px] hover:bg-amber-200 transition canva-tap"
+                                title="Khóa cả 5 tab của giáo viên này và Lưu ngay"
                               >
                                 Khóa hết
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
                                   void deleteUser(u.email);
-                                  toast.info('Đã xóa khỏi danh sách', u.email);
+                                  setDraftPermissionsMap(prev => {
+                                    const next = { ...prev };
+                                    delete next[normEmail];
+                                    return next;
+                                  });
+                                  setUnsavedEmails(prev => {
+                                    const next = { ...prev };
+                                    delete next[normEmail];
+                                    return next;
+                                  });
+                                  toast.info('Đã xóa khỏi danh sách & đồng bộ Cloud', u.email);
                                 }}
                                 className="p-1.5 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                                title="Xóa tài khoản"
+                                title="Xóa tài khoản giáo viên"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>

@@ -7,8 +7,6 @@ import {
   deleteTeacherFromStore,
 } from '@/lib/server-store';
 
-export const dynamic = 'force-dynamic';
-
 export async function GET(req: Request) {
   const blocked = enforceApiSecurity(req, { maxRequests: 180 });
   if (blocked) return blocked;

@@ -4,9 +4,6 @@ import path from 'path';
 import os from 'os';
 import { enforceApiSecurity, sanitizeInput } from '@/lib/security-shield';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 export interface ServerVaultItem {
   id: string;
   userEmail: string;

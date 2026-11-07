@@ -296,14 +296,14 @@ export function writeUnifiedStoreSync(state: UnifiedStoreState): void {
  * Pulls latest permissions/users state from the shared Cloud Channel (`ntfy.sh`)
  * so all Vercel Serverless instances and cold-started containers stay 100% in sync!
  */
-export async function readUnifiedStore(forceCloudPull = false): Promise<UnifiedStoreState> {
+export async function readUnifiedStore(forceCloudPull = true): Promise<UnifiedStoreState> {
   const state = readUnifiedStoreSync();
   const now = Date.now();
 
   if (
     !forceCloudPull &&
     globalForStore.__azLastCloudSyncMs &&
-    now - globalForStore.__azLastCloudSyncMs < 1200
+    now - globalForStore.__azLastCloudSyncMs < 800
   ) {
     return state;
   }
@@ -474,15 +474,24 @@ export async function recordTeacherLogin(params: {
   const isSuper = norm === SUPER_ADMIN_EMAIL;
 
   const existingUserIdx = state.users.findIndex(u => u.email.toLowerCase() === norm);
-  const existingPerm =
+  const delTs = state.deletedEmails[norm] || 0;
+  const rawExistingPerm =
     state.permissions[norm] ||
     (existingUserIdx >= 0 ? state.users[existingUserIdx].permissions : undefined);
+  const existingPerm =
+    rawExistingPerm && (rawExistingPerm.updatedAt || 0) >= delTs
+      ? rawExistingPerm
+      : undefined;
+
+  if (!isSuper && delTs > 0 && !existingPerm) {
+    delete state.deletedEmails[norm];
+  }
 
   const authoritativePerm = isSuper
     ? { ...SUPER_PERMS }
     : existingPerm
-    ? normalizePermissions(existingPerm, false, existingPerm.updatedAt || 1)
-    : { ...DEFAULT_USER_PERMS, updatedAt: 1 };
+    ? normalizePermissions(existingPerm, false, existingPerm.updatedAt || Date.now())
+    : { ...DEFAULT_USER_PERMS, updatedAt: Date.now() };
 
   state.permissions[norm] = authoritativePerm;
 
