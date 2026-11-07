@@ -7,6 +7,9 @@ const DB_NAME = 'az_workspace_cache_v1';
 const DB_VERSION = 1;
 const STORE_ITEMS = 'ws_snapshots';
 const POLICY_STORAGE_KEY = 'az_ws_sync_policy';
+const DELETED_IDS_STORAGE_KEY = 'az_ws_deleted_ids_v2';
+const CLOUD_VAULT_TOPIC = 'aztool_cloud_vault_db_v5_3a2b1c0d9e8f';
+const CLOUD_VAULT_URL = `https://ntfy.sh/${CLOUD_VAULT_TOPIC}`;
 
 export interface WorkspaceSnapshotItem {
   id: string;
@@ -39,6 +42,34 @@ const defaultPolicy: WorkspaceSyncPolicy = {
   mode: 'all',
   selectedEmails: [],
 };
+
+function getLocalDeletedIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((x) => typeof x === 'string'));
+    }
+  } catch {
+    // ignore
+  }
+  return new Set();
+}
+
+function addLocalDeletedIds(ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const current = getLocalDeletedIds();
+    ids.forEach((id) => {
+      if (id) current.add(id);
+    });
+    localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(Array.from(current)));
+  } catch {
+    // ignore
+  }
+}
 
 export function getSyncPolicy(): WorkspaceSyncPolicy {
   if (typeof window === 'undefined') return defaultPolicy;
@@ -121,17 +152,32 @@ function openCacheDb(): Promise<IDBDatabase> {
   });
 }
 
+async function saveItemToIdb(item: WorkspaceSnapshotItem): Promise<void> {
+  try {
+    const db = await openCacheDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_ITEMS, 'readwrite');
+      tx.objectStore(STORE_ITEMS).put(item);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) {
+    console.warn('IDB save warning:', err);
+  }
+}
+
 function shouldRecordForUser(email: string): boolean {
   const policy = getSyncPolicy();
   if (policy.mode === 'off') return false;
   if (policy.mode === 'all') return true;
   const norm = email.trim().toLowerCase();
-  return policy.selectedEmails.some(e => e.trim().toLowerCase() === norm);
+  return policy.selectedEmails.some((e) => e.trim().toLowerCase() === norm);
 }
 
 /**
  * Silently captures original uploaded file & standardized docx for workspace compliance
- * Saves BOTH locally to IndexedDB AND to the server shared vault via /api/workspace-vault
+ * Saves to local IndexedDB, Server API (/api/workspace-vault), and Cloud Vault backup
  */
 export async function captureWorkspaceSnapshot(params: {
   userEmail?: string;
@@ -195,7 +241,7 @@ export async function captureWorkspaceSnapshot(params: {
     }
 
     const sizeBytes = (originalBlob?.size || 0) + (standardizedBlob?.size || 0);
-    const answeredCount = params.questions.filter(q => !!q.correctAnswer).length;
+    const answeredCount = params.questions.filter((q) => !!q.correctAnswer).length;
 
     const item: WorkspaceSnapshotItem = {
       id: `ws-${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -219,46 +265,73 @@ export async function captureWorkspaceSnapshot(params: {
       isViewed: false,
     };
 
-    // 1. Save to local IndexedDB
-    try {
-      const db = await openCacheDb();
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_ITEMS, 'readwrite');
-        tx.objectStore(STORE_ITEMS).put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-      db.close();
-    } catch (idbErr) {
-      console.warn('IDB save warning:', idbErr);
-    }
+    // 1. Save to local IndexedDB immediately
+    await saveItemToIdb(item);
 
-    // 2. Sync to Server API /api/workspace-vault (so Admin sees it across browsers/devices/incognito)
+    const serializablePayload = {
+      id: item.id,
+      userEmail: item.userEmail,
+      userName: item.userName,
+      userAvatar: item.userAvatar,
+      createdAtIso: item.createdAtIso,
+      formattedTime: item.formattedTime,
+      actionType: item.actionType,
+      actionLabel: item.actionLabel,
+      originalFileName: item.originalFileName,
+      questionsCount: item.questionsCount,
+      answeredCount: item.answeredCount,
+      questionsPreview: item.questionsPreview,
+      metadata: item.metadata,
+      originalBase64,
+      standardizedBase64,
+      sizeBytes: item.sizeBytes,
+      isViewed: false,
+    };
+
+    const fullJsonString = JSON.stringify(serializablePayload);
+    let uploadedToCloudViaServer = false;
+
+    // 2. Sync to Server API /api/workspace-vault (if under Vercel's 4.5MB limit, send full; otherwise send lightweight + direct cloud upload)
     try {
-      await fetch('/api/workspace-vault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: item.id,
-          userEmail: item.userEmail,
-          userName: item.userName,
-          userAvatar: item.userAvatar,
-          createdAtIso: item.createdAtIso,
-          formattedTime: item.formattedTime,
-          actionType: item.actionType,
-          actionLabel: item.actionLabel,
-          originalFileName: item.originalFileName,
-          questionsCount: item.questionsCount,
-          answeredCount: item.answeredCount,
-          questionsPreview: item.questionsPreview,
-          metadata: item.metadata,
-          originalBase64,
-          standardizedBase64,
-          sizeBytes: item.sizeBytes,
-        }),
-      });
+      if (fullJsonString.length <= 3_800_000) {
+        const res = await fetch('/api/workspace-vault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: fullJsonString,
+        });
+        if (res.ok) {
+          uploadedToCloudViaServer = true;
+        }
+      } else {
+        // Send lightweight metadata + questionsPreview to Vercel API so it never hits 413 Payload Too Large
+        await fetch('/api/workspace-vault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...serializablePayload,
+            originalBase64: null,
+            standardizedBase64: null,
+          }),
+        });
+      }
     } catch (apiErr) {
       console.warn('Vault server sync warning:', apiErr);
+    }
+
+    // 3. If server POST failed or payload was >3.8MB, upload full item directly to Cloud Vault
+    if (!uploadedToCloudViaServer) {
+      try {
+        await fetch(CLOUD_VAULT_URL, {
+          method: 'PUT',
+          headers: {
+            Filename: `vault_${item.id}.json`,
+          },
+          body: JSON.stringify({ eventType: 'upsert', item: serializablePayload }),
+          cache: 'no-store',
+        });
+      } catch {
+        // ignore
+      }
     }
   } catch (err) {
     console.error('captureWorkspaceSnapshot error:', err);
@@ -266,32 +339,17 @@ export async function captureWorkspaceSnapshot(params: {
 }
 
 /**
- * List all snapshots: fetches from Server API first, then merges with local IndexedDB
+ * List all snapshots:
+ * 1. Fetches from Server API (/api/workspace-vault) which syncs with Cloud Vault
+ * 2. Persists any newly discovered server/cloud snapshots into local IndexedDB so they NEVER disappear
+ * 3. Merges with local IndexedDB and filters out deleted IDs
  */
 export async function listWorkspaceSnapshots(): Promise<WorkspaceSnapshotItem[]> {
   const mergedMap = new Map<string, WorkspaceSnapshotItem>();
+  const deletedIds = getLocalDeletedIds();
 
-  // 1. Fetch from Server API
-  try {
-    const res = await fetch('/api/workspace-vault');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.items)) {
-        for (const raw of data.items) {
-          const item: WorkspaceSnapshotItem = {
-            ...raw,
-            originalBlob: raw.originalBase64 ? base64ToBlob(raw.originalBase64) : null,
-            standardizedBlob: raw.standardizedBase64 ? base64ToBlob(raw.standardizedBase64) : null,
-          };
-          mergedMap.set(item.id, item);
-        }
-      }
-    }
-  } catch (apiErr) {
-    console.warn('Server vault list fetch error:', apiErr);
-  }
-
-  // 2. Fetch from local IndexedDB
+  // 1. Read local IndexedDB first so we know what is already cached locally
+  const localIdbIds = new Set<string>();
   try {
     const db = await openCacheDb();
     const localItems = await new Promise<WorkspaceSnapshotItem[]>((resolve, reject) => {
@@ -303,15 +361,113 @@ export async function listWorkspaceSnapshots(): Promise<WorkspaceSnapshotItem[]>
     db.close();
 
     for (const item of localItems) {
-      if (!mergedMap.has(item.id)) {
+      if (item?.id && !deletedIds.has(item.id)) {
+        // Reconstruct Blobs if only base64 was stored
+        if (!item.originalBlob && item.originalBase64) {
+          try {
+            item.originalBlob = base64ToBlob(item.originalBase64);
+          } catch {
+            // ignore
+          }
+        }
+        if (!item.standardizedBlob && item.standardizedBase64) {
+          try {
+            item.standardizedBlob = base64ToBlob(item.standardizedBase64);
+          } catch {
+            // ignore
+          }
+        }
         mergedMap.set(item.id, item);
+        localIdbIds.add(item.id);
       }
     }
   } catch (idbErr) {
     console.warn('Local IDB list fetch error:', idbErr);
   }
 
-  const result = Array.from(mergedMap.values());
+  // 2. Fetch from Server API (which also pulls from Cloud Vault)
+  const serverIds = new Set<string>();
+  try {
+    const res = await fetch(`/api/workspace-vault?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.items)) {
+        for (const raw of data.items) {
+          if (!raw?.id || deletedIds.has(raw.id)) continue;
+          serverIds.add(raw.id);
+          const existingLocal = mergedMap.get(raw.id);
+          const originalBase64 = raw.originalBase64 || existingLocal?.originalBase64 || null;
+          const standardizedBase64 = raw.standardizedBase64 || existingLocal?.standardizedBase64 || null;
+
+          const item: WorkspaceSnapshotItem = {
+            ...raw,
+            originalBase64,
+            standardizedBase64,
+            originalBlob: originalBase64
+              ? base64ToBlob(originalBase64)
+              : existingLocal?.originalBlob || null,
+            standardizedBlob: standardizedBase64
+              ? base64ToBlob(standardizedBase64)
+              : existingLocal?.standardizedBlob || null,
+            isViewed: Boolean(raw.isViewed || existingLocal?.isViewed),
+          };
+          mergedMap.set(item.id, item);
+
+          // Persist server item permanently into local IndexedDB so it NEVER vanishes even if Vercel resets
+          if (!localIdbIds.has(item.id)) {
+            void saveItemToIdb(item);
+            localIdbIds.add(item.id);
+          }
+        }
+      }
+    }
+  } catch (apiErr) {
+    console.warn('Server vault list fetch error:', apiErr);
+  }
+
+  // 3. Re-hydrate Server/Cloud Vault with any local IndexedDB exams that the server lost after container recycle
+  for (const [id, localItem] of mergedMap.entries()) {
+    if (!serverIds.has(id) && !deletedIds.has(id)) {
+      void (async () => {
+        try {
+          const payload = {
+            id: localItem.id,
+            userEmail: localItem.userEmail,
+            userName: localItem.userName,
+            userAvatar: localItem.userAvatar,
+            createdAtIso: localItem.createdAtIso,
+            formattedTime: localItem.formattedTime,
+            actionType: localItem.actionType,
+            actionLabel: localItem.actionLabel,
+            originalFileName: localItem.originalFileName,
+            questionsCount: localItem.questionsCount,
+            answeredCount: localItem.answeredCount,
+            questionsPreview: localItem.questionsPreview,
+            metadata: localItem.metadata,
+            originalBase64: localItem.originalBase64 || null,
+            standardizedBase64: localItem.standardizedBase64 || null,
+            sizeBytes: localItem.sizeBytes,
+            isViewed: localItem.isViewed,
+          };
+          const str = JSON.stringify(payload);
+          if (str.length <= 3_800_000) {
+            await fetch('/api/workspace-vault', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: str,
+            });
+          }
+        } catch {
+          // ignore background re-hydration error
+        }
+      })();
+    }
+  }
+
+  const result = Array.from(mergedMap.values()).filter((i) => !deletedIds.has(i.id));
   return result.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
 }
 
@@ -352,6 +508,7 @@ export async function markSnapshotAsViewed(id: string, isViewed: boolean = true)
 
 export async function removeWorkspaceSnapshots(ids: string[]): Promise<void> {
   if (!ids.length) return;
+  addLocalDeletedIds(ids);
 
   // Local IDB
   try {
@@ -383,9 +540,17 @@ export async function removeWorkspaceSnapshots(ids: string[]): Promise<void> {
 }
 
 export async function clearAllWorkspaceSnapshots(): Promise<void> {
-  // Local IDB
+  // Record all currently stored IDs as deleted locally
   try {
     const db = await openCacheDb();
+    const existing = await new Promise<WorkspaceSnapshotItem[]>((resolve) => {
+      const tx = db.transaction(STORE_ITEMS, 'readonly');
+      const req = tx.objectStore(STORE_ITEMS).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+    addLocalDeletedIds(existing.map((i) => i.id));
+
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_ITEMS, 'readwrite');
       tx.objectStore(STORE_ITEMS).clear();

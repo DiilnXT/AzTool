@@ -13,10 +13,11 @@ export async function GET(req: Request) {
   const blocked = enforceApiSecurity(req, { maxRequests: 180 });
   if (blocked) return blocked;
 
-  const state = readUnifiedStore();
+  const state = await readUnifiedStore();
   return NextResponse.json(
     {
       success: true,
+      rev: state.rev,
       permissions: state.permissions,
       users: state.users,
       deletedEmails: state.deletedEmails,
@@ -36,19 +37,21 @@ export async function POST(req: Request) {
   try {
     const rawBody = await req.json();
     const body = sanitizeInput(rawBody);
-    const { email, permissions, displayName, bulk, bulkUsers } = body;
+    const { email, permissions, displayName, bulk, bulkUsers, bulkDeleted } = body;
 
-    let state = readUnifiedStore();
-
+    let state;
     if (bulk && typeof bulk === 'object') {
-      state = syncBulkAdminPermissions(bulk, bulkUsers);
+      state = await syncBulkAdminPermissions(bulk, bulkUsers, bulkDeleted);
     } else if (email && permissions) {
-      state = upsertAdminPermission(String(email), permissions, displayName);
+      state = await upsertAdminPermission(String(email), permissions, displayName);
+    } else {
+      state = await readUnifiedStore(true);
     }
 
     return NextResponse.json(
       {
         success: true,
+        rev: state.rev,
         permissions: state.permissions,
         users: state.users,
         deletedEmails: state.deletedEmails,
@@ -76,10 +79,11 @@ export async function DELETE(req: Request) {
     const email = searchParams.get('email') || '';
     const id = searchParams.get('id') || '';
 
-    const state = deleteTeacherFromStore(id || email, email);
+    const state = await deleteTeacherFromStore(id || email, email);
     return NextResponse.json(
       {
         success: true,
+        rev: state.rev,
         permissions: state.permissions,
         users: state.users,
         deletedEmails: state.deletedEmails,

@@ -12,6 +12,7 @@ const STORAGE_SYSTEM_CONFIG = 'aztool_system_config';
 const STORAGE_THEME_KEY = 'aztool_theme_mode';
 const STORAGE_PERMISSIONS_KEY = 'aztool_user_permissions';
 const STORAGE_DELETED_EMAILS_KEY = 'aztool_deleted_emails';
+const CLOUD_PERMS_TOPIC = 'aztool_cloud_perms_db_v5_9c8d7e6f5a4b';
 
 declare global {
   interface Window {
@@ -65,6 +66,151 @@ export function normalizeClientPermissions(
         ? raw.updatedAt
         : fallbackUpdatedAt,
   };
+}
+
+async function fetchCloudPermsSnapshot(): Promise<{
+  permissions?: Record<string, TabPermissions>;
+  users?: UserProfile[];
+  deletedEmails?: Record<string, number>;
+} | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}/json`, {
+      headers: {
+        'X-Poll': '1',
+        'X-Since': 'all',
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+
+    const text = await res.text();
+    const lines = text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    const combinedPerms: Record<string, TabPermissions> = {};
+    const combinedUsersMap = new Map<string, UserProfile>();
+    const combinedDeleted: Record<string, number> = {};
+
+    const applySnapshot = (snap: any) => {
+      if (!snap || typeof snap !== 'object') return;
+      if (snap.deletedEmails && typeof snap.deletedEmails === 'object') {
+        for (const [em, ts] of Object.entries(snap.deletedEmails)) {
+          const norm = em.trim().toLowerCase();
+          const numTs = Number(ts) || 0;
+          if (!combinedDeleted[norm] || numTs > combinedDeleted[norm]) {
+            combinedDeleted[norm] = numTs;
+          }
+        }
+      }
+      if (snap.permissions && typeof snap.permissions === 'object') {
+        for (const [em, pVal] of Object.entries(snap.permissions)) {
+          const norm = em.trim().toLowerCase();
+          if (!norm) continue;
+          const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+          const pNorm = normalizeClientPermissions(pVal as any, isSuper, 1);
+          const delTs = combinedDeleted[norm] || 0;
+          if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+            delete combinedPerms[norm];
+            combinedUsersMap.delete(norm);
+            continue;
+          }
+          if (!isSuper && (pNorm.updatedAt || 0) > delTs && delTs > 0) {
+            delete combinedDeleted[norm];
+          }
+          const prev = combinedPerms[norm];
+          if (!prev || (pNorm.updatedAt || 0) >= (prev.updatedAt || 0)) {
+            combinedPerms[norm] = pNorm;
+          }
+        }
+      }
+      if (Array.isArray(snap.users)) {
+        for (const u of snap.users) {
+          if (!u?.email) continue;
+          const norm = String(u.email).trim().toLowerCase();
+          const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+          const pNorm =
+            combinedPerms[norm] || normalizeClientPermissions(u.permissions, isSuper, 1);
+          const delTs = combinedDeleted[norm] || 0;
+          if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+            combinedUsersMap.delete(norm);
+            continue;
+          }
+          combinedUsersMap.set(norm, {
+            ...u,
+            email: norm,
+            permissions: pNorm,
+          });
+        }
+      }
+    };
+
+    for (const line of lines) {
+      try {
+        const env = JSON.parse(line);
+        if (env.event === 'message') {
+          if (env.attachment?.url) {
+            const attRes = await fetch(env.attachment.url, { cache: 'no-store' });
+            if (attRes.ok) {
+              applySnapshot(await attRes.json());
+            }
+          } else if (env.message) {
+            applySnapshot(JSON.parse(env.message));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (
+      Object.keys(combinedPerms).length === 0 &&
+      combinedUsersMap.size === 0 &&
+      Object.keys(combinedDeleted).length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      permissions: combinedPerms,
+      users: Array.from(combinedUsersMap.values()),
+      deletedEmails: combinedDeleted,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function publishCloudPermsSnapshot(payloadObj: {
+  permissions: Record<string, TabPermissions>;
+  users: UserProfile[];
+  deletedEmails: Record<string, number>;
+}): Promise<void> {
+  try {
+    const payload = JSON.stringify({
+      rev: Date.now(),
+      ...payloadObj,
+    });
+    if (payload.length < 3500) {
+      await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}`, {
+        method: 'POST',
+        body: payload,
+      });
+    } else {
+      await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}`, {
+        method: 'PUT',
+        headers: { Filename: 'az_perms_state.json' },
+        body: payload,
+      });
+    }
+  } catch {
+    // ignore
+  }
 }
 
 interface AuthContextType {
@@ -160,200 +306,227 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Authoritative User & Permission Synchronization:
-   * - Fetches fresh `/api/permissions` and `/api/users` with `cache: 'no-store'`.
-   * - Resolves conflicts using `updatedAt` timestamps and `deletedEmails` tombstones.
-   * - For Teacher browsers, Server state is authoritative so Admin permission changes
-   *   (open/lock/delete/re-add) take effect immediately on the Teacher's screen!
-   * - Automatically updates `user.permissions` in React state and `localStorage`.
+   * - Fetches from both `/api/permissions`, `/api/users`, and the Cloud Sync channel.
+   * - For Teacher browsers (`!isCurrentBrowserAdmin`), Server/Cloud permissions are 100%
+   *   authoritative and unconditionally replace any stale localStorage data!
    */
   const refreshUsers = useCallback(async () => {
     if (typeof window === 'undefined') return;
     try {
       const ts = Date.now();
-      const [usersRes, permsRes] = await Promise.all([
+      const [usersRes, permsRes, cloudSnap] = await Promise.all([
         fetch(`/api/users?t=${ts}`, { cache: 'no-store' }).catch(() => null),
         fetch(`/api/permissions?t=${ts}`, { cache: 'no-store' }).catch(() => null),
+        fetchCloudPermsSnapshot(),
       ]);
 
-      let serverUsers: UserProfile[] = [];
-      let serverPerms: Record<string, TabPermissions> = {};
-      let serverDeleted: Record<string, number> = {};
+      const serverPerms: Record<string, TabPermissions> = {};
+      const serverUsersMap = new Map<string, UserProfile>();
+      const serverDeleted: Record<string, number> = {};
+
+      const mergeSource = (
+        srcPerms?: Record<string, TabPermissions>,
+        srcUsers?: UserProfile[],
+        srcDeleted?: Record<string, number>
+      ) => {
+        if (srcDeleted && typeof srcDeleted === 'object') {
+          for (const [em, dTs] of Object.entries(srcDeleted)) {
+            const norm = em.trim().toLowerCase();
+            const numTs = Number(dTs) || 0;
+            if (!serverDeleted[norm] || numTs > serverDeleted[norm]) {
+              serverDeleted[norm] = numTs;
+            }
+          }
+        }
+        if (srcPerms && typeof srcPerms === 'object') {
+          for (const [em, pVal] of Object.entries(srcPerms)) {
+            const norm = em.trim().toLowerCase();
+            if (!norm) continue;
+            const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+            const pNorm = normalizeClientPermissions(pVal, isSuper, 1);
+            const delTs = serverDeleted[norm] || 0;
+            if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+              delete serverPerms[norm];
+              serverUsersMap.delete(norm);
+              continue;
+            }
+            if (!isSuper && (pNorm.updatedAt || 0) > delTs && delTs > 0) {
+              delete serverDeleted[norm];
+            }
+            const existing = serverPerms[norm];
+            if (!existing || (pNorm.updatedAt || 0) >= (existing.updatedAt || 0)) {
+              serverPerms[norm] = pNorm;
+            }
+          }
+        }
+        if (Array.isArray(srcUsers)) {
+          for (const su of srcUsers) {
+            if (!su?.email) continue;
+            const norm = su.email.trim().toLowerCase();
+            const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+            const pNorm =
+              serverPerms[norm] || normalizeClientPermissions(su.permissions, isSuper, 1);
+            const delTs = serverDeleted[norm] || 0;
+            if (!isSuper && delTs > (pNorm.updatedAt || 0)) {
+              serverUsersMap.delete(norm);
+              continue;
+            }
+            serverPerms[norm] = pNorm;
+            serverUsersMap.set(norm, {
+              ...su,
+              email: norm,
+              permissions: pNorm,
+            });
+          }
+        }
+      };
 
       if (usersRes && usersRes.ok) {
         const data = await usersRes.json();
-        if (Array.isArray(data.users)) {
-          serverUsers = data.users;
-        }
-        if (data.permissions && typeof data.permissions === 'object') {
-          serverPerms = { ...serverPerms, ...data.permissions };
-        }
-        if (data.deletedEmails && typeof data.deletedEmails === 'object') {
-          serverDeleted = { ...serverDeleted, ...data.deletedEmails };
-        }
+        mergeSource(data.permissions, data.users, data.deletedEmails);
       }
-
       if (permsRes && permsRes.ok) {
         const pData = await permsRes.json();
-        if (pData.permissions && typeof pData.permissions === 'object') {
-          serverPerms = { ...serverPerms, ...pData.permissions };
-        }
-        if (Array.isArray(pData.users) && serverUsers.length === 0) {
-          serverUsers = pData.users;
-        }
-        if (pData.deletedEmails && typeof pData.deletedEmails === 'object') {
-          serverDeleted = { ...serverDeleted, ...pData.deletedEmails };
-        }
+        mergeSource(pData.permissions, pData.users, pData.deletedEmails);
       }
-
-      // Read local storage state
-      let localPerms: Record<string, TabPermissions> = {};
-      try {
-        const rawP = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
-        if (rawP) localPerms = JSON.parse(rawP);
-      } catch {
-        // ignore
-      }
-
-      let localDeleted: Record<string, number> = {};
-      try {
-        const rawD = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
-        if (rawD) localDeleted = JSON.parse(rawD);
-      } catch {
-        // ignore
+      if (cloudSnap) {
+        mergeSource(cloudSnap.permissions, cloudSnap.users, cloudSnap.deletedEmails);
       }
 
       const activeUser = userRef.current;
       const isCurrentBrowserAdmin = Boolean(
         activeUser?.email &&
-          activeUser.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+          activeUser.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
       );
 
-      // Merge deleted tombstones
+      // Read local storage state (deduplicated & normalized by lowercase email!)
+      const localPerms: Record<string, TabPermissions> = {};
+      try {
+        const rawP = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
+        if (rawP) {
+          const parsedP = JSON.parse(rawP);
+          if (parsedP && typeof parsedP === 'object') {
+            for (const [k, v] of Object.entries(parsedP)) {
+              const norm = k.trim().toLowerCase();
+              if (!norm) continue;
+              const pNorm = normalizeClientPermissions(
+                v as any,
+                norm === SUPER_ADMIN_EMAIL.toLowerCase(),
+                0
+              );
+              const existing = localPerms[norm];
+              if (!existing || (pNorm.updatedAt || 0) >= (existing.updatedAt || 0)) {
+                localPerms[norm] = pNorm;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const localDeleted: Record<string, number> = {};
+      try {
+        const rawD = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
+        if (rawD) {
+          const parsedD = JSON.parse(rawD);
+          if (parsedD && typeof parsedD === 'object') {
+            for (const [k, v] of Object.entries(parsedD)) {
+              localDeleted[k.trim().toLowerCase()] = Number(v) || 0;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       const mergedDeleted: Record<string, number> = { ...serverDeleted };
       if (isCurrentBrowserAdmin) {
         for (const [em, delTs] of Object.entries(localDeleted)) {
-          const norm = em.trim().toLowerCase();
-          if (!mergedDeleted[norm] || delTs > mergedDeleted[norm]) {
-            mergedDeleted[norm] = delTs;
+          if (!mergedDeleted[em] || delTs > mergedDeleted[em]) {
+            mergedDeleted[em] = delTs;
           }
         }
       }
       localStorage.setItem(STORAGE_DELETED_EMAILS_KEY, JSON.stringify(mergedDeleted));
 
-      // Merge permissions
       const mergedPerms: Record<string, TabPermissions> = {
+        ...serverPerms,
         [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
       };
 
-      // 1. Apply server permissions first
-      for (const [em, sPerm] of Object.entries(serverPerms)) {
-        const norm = em.trim().toLowerCase();
-        if (!norm) continue;
-        const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
-        const normSPerm = normalizeClientPermissions(sPerm, isSuper, 1);
-        const delTs = mergedDeleted[norm] || 0;
-        if (!isSuper && delTs > (normSPerm.updatedAt || 0)) {
-          continue;
-        }
-        mergedPerms[norm] = normSPerm;
-      }
+      let adminNeedsCloudPush = false;
 
-      // 2. Merge local permissions ONLY if newer `updatedAt` (or if Admin browser has newer edits)
-      let adminHasNewerLocalData = false;
-      for (const [em, lPerm] of Object.entries(localPerms)) {
-        const norm = em.trim().toLowerCase();
-        if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) continue;
-        const normLPerm = normalizeClientPermissions(lPerm, false, 0);
-        const delTs = mergedDeleted[norm] || 0;
-        if (delTs > (normLPerm.updatedAt || 0)) {
-          continue;
-        }
-
-        const existingServerPerm = mergedPerms[norm];
-        if (!existingServerPerm) {
-          // If on Admin browser (or if local entry has an explicit Admin updatedAt timestamp > 0)
-          if (isCurrentBrowserAdmin || (normLPerm.updatedAt || 0) > 1) {
-            mergedPerms[norm] = normLPerm;
-            if (isCurrentBrowserAdmin) adminHasNewerLocalData = true;
+      // ONLY on Admin's browser do we merge localPerms into mergedPerms!
+      // On a Teacher's browser (`!isCurrentBrowserAdmin`), Server/Cloud (`serverPerms`) is 100% authoritative!
+      if (isCurrentBrowserAdmin) {
+        for (const [norm, lPerm] of Object.entries(localPerms)) {
+          if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) continue;
+          const delTs = mergedDeleted[norm] || 0;
+          if (delTs > (lPerm.updatedAt || 0)) {
+            delete mergedPerms[norm];
+            continue;
           }
-        } else {
-          // Both server and local have permissions for `norm`:
-          // Compare `updatedAt` timestamps! If local was updated more recently by Admin, keep local;
-          // otherwise Server wins!
-          const lTime = normLPerm.updatedAt || 0;
-          const sTime = existingServerPerm.updatedAt || 0;
-          if (lTime > sTime) {
-            mergedPerms[norm] = normLPerm;
-            if (isCurrentBrowserAdmin) adminHasNewerLocalData = true;
+          const sPerm = mergedPerms[norm];
+          if (!sPerm || (lPerm.updatedAt || 0) > (sPerm.updatedAt || 0)) {
+            mergedPerms[norm] = lPerm;
+            adminNeedsCloudPush = true;
           }
         }
       }
 
-      setPermissionsMap(mergedPerms);
-      localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(mergedPerms));
-
-      // Merge users list
-      let currentLocalUsers: UserProfile[] = [];
-      try {
-        const rawU = localStorage.getItem(STORAGE_ALL_USERS_KEY);
-        if (rawU) currentLocalUsers = JSON.parse(rawU);
-      } catch {
-        // ignore
-      }
-
+      // Build final users list
       const userMap = new Map<string, UserProfile>();
-
-      for (const su of serverUsers) {
-        if (!su?.email) continue;
-        const norm = su.email.trim().toLowerCase();
+      for (const [norm, su] of serverUsersMap.entries()) {
         const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
-        const sPerm =
-          mergedPerms[norm] || normalizeClientPermissions(su.permissions, isSuper, 1);
         const delTs = mergedDeleted[norm] || 0;
-        if (!isSuper && delTs > (sPerm.updatedAt || 0)) {
+        const p = mergedPerms[norm] || su.permissions || defaultUserPermissions;
+        if (!isSuper && delTs > (p.updatedAt || 0)) {
           continue;
         }
-        mergedPerms[norm] = sPerm;
         userMap.set(norm, {
           ...su,
           email: norm,
-          permissions: sPerm,
+          permissions: isSuper ? superAdminPermissions : p,
         });
       }
 
-      for (const lu of currentLocalUsers) {
-        if (!lu?.email) continue;
-        const norm = lu.email.trim().toLowerCase();
-        const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
-        const lPerm =
-          mergedPerms[norm] || normalizeClientPermissions(lu.permissions, isSuper, 0);
-        const delTs = mergedDeleted[norm] || 0;
-        if (!isSuper && delTs > (lPerm.updatedAt || 0)) {
-          continue;
+      if (isCurrentBrowserAdmin) {
+        try {
+          const rawU = localStorage.getItem(STORAGE_ALL_USERS_KEY);
+          const localUsers: UserProfile[] = rawU ? JSON.parse(rawU) : [];
+          for (const lu of localUsers) {
+            if (!lu?.email) continue;
+            const norm = lu.email.trim().toLowerCase();
+            const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+            const p =
+              mergedPerms[norm] || normalizeClientPermissions(lu.permissions, isSuper, 0);
+            const delTs = mergedDeleted[norm] || 0;
+            if (!isSuper && delTs > (p.updatedAt || 0)) {
+              continue;
+            }
+            mergedPerms[norm] = p;
+            const existing = userMap.get(norm);
+            userMap.set(norm, {
+              ...(lu || {}),
+              ...(existing || {}),
+              email: norm,
+              displayName: existing?.displayName || lu.displayName || norm.split('@')[0],
+              photoURL: existing?.photoURL || lu.photoURL,
+              permissions: isSuper ? superAdminPermissions : p,
+            });
+          }
+        } catch {
+          // ignore
         }
-        // Only keep a local-only user if they exist in mergedPerms or we are on Admin browser
-        if (!userMap.has(norm) && !mergedPerms[norm] && !isCurrentBrowserAdmin) {
-          continue;
-        }
-        const existing = userMap.get(norm);
-        const finalPerm = mergedPerms[norm] || lPerm;
-        mergedPerms[norm] = finalPerm;
-        userMap.set(norm, {
-          ...(lu || {}),
-          ...(existing || {}),
-          email: norm,
-          displayName: existing?.displayName || lu.displayName || norm.split('@')[0],
-          photoURL: existing?.photoURL || lu.photoURL,
-          permissions: finalPerm,
-        });
       }
 
-      // Ensure every email in mergedPerms has a UserProfile row
-      for (const [emailKey, pVal] of Object.entries(mergedPerms)) {
-        const norm = emailKey.toLowerCase();
+      for (const [norm, pVal] of Object.entries(mergedPerms)) {
         const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
         const delTs = mergedDeleted[norm] || 0;
         if (!isSuper && delTs > (pVal.updatedAt || 0)) {
+          delete mergedPerms[norm];
+          userMap.delete(norm);
           continue;
         }
         if (!userMap.has(norm)) {
@@ -370,9 +543,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             mixCount: 0,
           });
         } else {
-          const u = userMap.get(norm)!;
+          const existing = userMap.get(norm)!;
           userMap.set(norm, {
-            ...u,
+            ...existing,
             permissions: isSuper ? superAdminPermissions : pVal,
           });
         }
@@ -389,9 +562,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentLoggedUser?.email) {
         const normCurrent = currentLoggedUser.email.trim().toLowerCase();
         const isSuper = normCurrent === SUPER_ADMIN_EMAIL.toLowerCase();
+        const delTs = mergedDeleted[normCurrent] || 0;
+        const rawPerm = mergedPerms[normCurrent];
+
         const latestPermForCurrent = isSuper
           ? superAdminPermissions
-          : mergedPerms[normCurrent] || defaultUserPermissions;
+          : rawPerm && (rawPerm.updatedAt || 0) >= delTs
+          ? rawPerm
+          : defaultUserPermissions;
 
         const prevPerm = currentLoggedUser.permissions;
         const hasChanged =
@@ -405,6 +583,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (hasChanged) {
           const updatedSelf: UserProfile = {
             ...currentLoggedUser,
+            email: normCurrent,
             role: isSuper ? 'super_admin' : currentLoggedUser.role,
             permissions: latestPermForCurrent,
           };
@@ -414,13 +593,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // If Admin browser has newer local permissions than a cold-started server, push bulk to server
-      if (isCurrentBrowserAdmin && adminHasNewerLocalData) {
+      if (isCurrentBrowserAdmin && adminNeedsCloudPush) {
         void fetch('/api/permissions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bulk: mergedPerms, bulkUsers: mergedList }),
+          body: JSON.stringify({
+            bulk: mergedPerms,
+            bulkUsers: mergedList,
+            bulkDeleted: mergedDeleted,
+          }),
         }).catch(() => null);
+        void publishCloudPermsSnapshot({
+          permissions: mergedPerms,
+          users: mergedList,
+          deletedEmails: mergedDeleted,
+        });
       }
     } catch (e) {
       console.warn('refreshUsers error:', e);
@@ -436,7 +623,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       applyThemeToDom(initialTheme);
 
       // 2. Permissions from localStorage
-      let initialPerms: Record<string, TabPermissions> = {
+      const initialPerms: Record<string, TabPermissions> = {
         [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
       };
       const storedPerms = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
@@ -502,6 +689,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (storedUser) {
         const parsed: UserProfile = JSON.parse(storedUser);
         const normEmail = (parsed.email || '').trim().toLowerCase();
+        parsed.email = normEmail;
         if (normEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
           parsed.role = 'super_admin';
           parsed.permissions = superAdminPermissions;
@@ -515,7 +703,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsed);
       }
 
-      // 6. Sync with Server immediately on mount
+      // 6. Sync with Server & Cloud immediately on mount
       void refreshUsers();
     } catch (e) {
       console.error('Error loading auth state:', e);
@@ -524,7 +712,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshUsers]);
 
-  // Real-time live sync when teacher focuses window, switches tab, or every 6s
+  // Real-time live sync when teacher focuses window, switches tab, or every 4s
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -552,7 +740,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === 'visible') {
         void refreshUsers();
       }
-    }, 6000);
+    }, 4000);
 
     return () => {
       window.removeEventListener('focus', handleFocusOrVisibility);
@@ -580,7 +768,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isSuperAdmin = Boolean(
-    user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+    user?.email && user.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
   );
 
   const hasTabAccess = (
@@ -627,75 +815,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
     // 0. Clear deletion tombstone if this email was previously deleted
+    let currentDeletedSnapshot: Record<string, number> = {};
     try {
       const rawDel = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
       if (rawDel) {
         const parsedDel = JSON.parse(rawDel);
-        if (parsedDel && norm in parsedDel) {
-          delete parsedDel[norm];
-          localStorage.setItem(STORAGE_DELETED_EMAILS_KEY, JSON.stringify(parsedDel));
+        if (parsedDel && typeof parsedDel === 'object') {
+          for (const [k, v] of Object.entries(parsedDel)) {
+            const kNorm = k.trim().toLowerCase();
+            if (kNorm !== norm) {
+              currentDeletedSnapshot[kNorm] = Number(v) || 0;
+            }
+          }
         }
       }
+      localStorage.setItem(
+        STORAGE_DELETED_EMAILS_KEY,
+        JSON.stringify(currentDeletedSnapshot)
+      );
     } catch {
       // ignore
     }
 
-    // 1. Update permissionsMap immediately
-    let nextPermsSnapshot: Record<string, TabPermissions> = {};
-    setPermissionsMap(prev => {
-      const next = { ...prev, [norm]: cleanPerms };
-      nextPermsSnapshot = next;
-      localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(next));
-      return next;
-    });
+    // 1. Update permissionsMap immediately (cleaning any non-lowercase duplicate keys!)
+    const cleanedPrevPerms: Record<string, TabPermissions> = {};
+    for (const [k, v] of Object.entries(permissionsMap)) {
+      cleanedPrevPerms[k.trim().toLowerCase()] = v;
+    }
+    const nextPermsSnapshot: Record<string, TabPermissions> = {
+      ...cleanedPrevPerms,
+      [norm]: cleanPerms,
+    };
+    setPermissionsMap(nextPermsSnapshot);
+    localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(nextPermsSnapshot));
 
-    // 2. Update or Add user in allUsers immediately
-    let nextUsersSnapshot: UserProfile[] = [];
-    setAllUsers(prev => {
-      const exists = prev.some(u => u.email.toLowerCase() === norm);
-      let nextUsers: UserProfile[];
-      if (exists) {
-        nextUsers = prev.map(u => {
-          if (u.email.toLowerCase() === norm) {
-            return {
-              ...u,
-              email: norm,
-              displayName: displayName?.trim() || u.displayName,
-              permissions: cleanPerms,
-              lastActive: new Date().toISOString(),
-            };
-          }
-          return u;
-        });
-      } else {
-        const newUser: UserProfile = {
-          id: `user-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
-          email: norm,
-          displayName: displayName?.trim() || norm.split('@')[0],
-          photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
-          role: isSuper ? 'super_admin' : 'free',
-          permissions: cleanPerms,
-          createdAt: new Date().toISOString().split('T')[0],
-          lastActive: new Date().toISOString(),
-          examsGeneratedCount: 0,
-          mixCount: 0,
-        };
-        nextUsers = [...prev, newUser];
-      }
-      nextUsersSnapshot = nextUsers;
-      localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsers));
-      return nextUsers;
-    });
+    // 2. Update or Add user in allUsers immediately (deduplicating by lowercase email!)
+    const dedupUsersMap = new Map<string, UserProfile>();
+    for (const u of allUsers) {
+      if (!u?.email) continue;
+      const uNorm = u.email.trim().toLowerCase();
+      dedupUsersMap.set(uNorm, { ...u, email: uNorm });
+    }
+
+    const existingUser = dedupUsersMap.get(norm);
+    if (existingUser) {
+      dedupUsersMap.set(norm, {
+        ...existingUser,
+        email: norm,
+        displayName: displayName?.trim() || existingUser.displayName,
+        permissions: cleanPerms,
+        lastActive: new Date().toISOString(),
+      });
+    } else {
+      dedupUsersMap.set(norm, {
+        id: `user-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+        email: norm,
+        displayName: displayName?.trim() || norm.split('@')[0],
+        photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
+        role: isSuper ? 'super_admin' : 'free',
+        permissions: cleanPerms,
+        createdAt: new Date().toISOString().split('T')[0],
+        lastActive: new Date().toISOString(),
+        examsGeneratedCount: 0,
+        mixCount: 0,
+      });
+    }
+
+    const nextUsersSnapshot = Array.from(dedupUsersMap.values());
+    setAllUsers(nextUsersSnapshot);
+    localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsersSnapshot));
 
     // 3. Update current user if matching
-    if (user && user.email.toLowerCase() === norm) {
-      const updatedSelf = { ...user, permissions: cleanPerms };
+    if (user && user.email.trim().toLowerCase() === norm) {
+      const updatedSelf = { ...user, email: norm, permissions: cleanPerms };
       userRef.current = updatedSelf;
       setUser(updatedSelf);
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
     }
 
-    // 4. Push to Server APIs immediately (both single update and bulk state to keep serverless warm)
+    // 4. Push to Server APIs AND direct Cloud Sync channel so every device/container updates immediately!
     try {
       await Promise.all([
         fetch('/api/permissions', {
@@ -705,6 +903,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: norm,
             permissions: cleanPerms,
             displayName: displayName?.trim() || undefined,
+            bulk: nextPermsSnapshot,
+            bulkUsers: nextUsersSnapshot,
+            bulkDeleted: currentDeletedSnapshot,
           }),
         }),
         fetch('/api/users', {
@@ -716,18 +917,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             permissions: cleanPerms,
           }),
         }),
+        publishCloudPermsSnapshot({
+          permissions: nextPermsSnapshot,
+          users: nextUsersSnapshot,
+          deletedEmails: currentDeletedSnapshot,
+        }),
       ]);
-
-      if (Object.keys(nextPermsSnapshot).length > 0) {
-        void fetch('/api/permissions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bulk: nextPermsSnapshot,
-            bulkUsers: nextUsersSnapshot,
-          }),
-        }).catch(() => null);
-      }
     } catch (e) {
       console.warn('Sync permissions error:', e);
     }
@@ -770,61 +965,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const lowerEmail = email.toLowerCase();
     const isSuper = lowerEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Read latest local permissions (in case Admin edited on this same browser)
-    let latestLocalPerm: TabPermissions | undefined = permissionsMap[lowerEmail];
-    try {
-      const rawP = localStorage.getItem(STORAGE_PERMISSIONS_KEY);
-      if (rawP) {
-        const parsedP = JSON.parse(rawP);
-        if (parsedP && parsedP[lowerEmail]) {
-          latestLocalPerm = normalizeClientPermissions(parsedP[lowerEmail], isSuper);
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Contact server `/api/users` with `action: 'login'` so server preserves authoritative Admin permissions
+    // 1. Contact Server & Cloud to get the authoritative permissions set by Admin
     let serverPermForUser: TabPermissions | undefined;
     try {
-      const loginRes = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({
-          action: 'login',
-          email: lowerEmail,
-          displayName: customName,
-          photoURL: customAvatar,
-        }),
-      });
-      if (loginRes.ok) {
+      const [loginRes, cloudSnap] = await Promise.all([
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            action: 'login',
+            email: lowerEmail,
+            displayName: customName,
+            photoURL: customAvatar,
+          }),
+        }).catch(() => null),
+        fetchCloudPermsSnapshot(),
+      ]);
+
+      if (loginRes && loginRes.ok) {
         const data = await loginRes.json();
         if (data.permissions && data.permissions[lowerEmail]) {
           serverPermForUser = normalizeClientPermissions(
             data.permissions[lowerEmail],
-            isSuper
+            isSuper,
+            1
           );
         } else if (data.user?.permissions) {
-          serverPermForUser = normalizeClientPermissions(data.user.permissions, isSuper);
+          serverPermForUser = normalizeClientPermissions(
+            data.user.permissions,
+            isSuper,
+            1
+          );
+        }
+      }
+
+      if (cloudSnap?.permissions && cloudSnap.permissions[lowerEmail]) {
+        const cloudPerm = normalizeClientPermissions(
+          cloudSnap.permissions[lowerEmail],
+          isSuper,
+          1
+        );
+        if (
+          !serverPermForUser ||
+          (cloudPerm.updatedAt || 0) >= (serverPermForUser.updatedAt || 0)
+        ) {
+          serverPermForUser = cloudPerm;
         }
       }
     } catch {
       // ignore
     }
 
-    // Pick whichever permission record has the newer `updatedAt` timestamp
-    let resolvedPerms: TabPermissions;
-    if (isSuper) {
-      resolvedPerms = { ...superAdminPermissions };
-    } else if (serverPermForUser && latestLocalPerm) {
-      resolvedPerms =
-        (latestLocalPerm.updatedAt || 0) > (serverPermForUser.updatedAt || 0)
-          ? latestLocalPerm
-          : serverPermForUser;
-    } else {
-      resolvedPerms = serverPermForUser || latestLocalPerm || { ...defaultUserPermissions };
-    }
+    const resolvedPerms: TabPermissions = isSuper
+      ? { ...superAdminPermissions }
+      : serverPermForUser || { ...defaultUserPermissions };
 
     setPermissionsMap(prev => {
       const next = { ...prev, [lowerEmail]: resolvedPerms };
@@ -832,7 +1027,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
-    let existing = allUsers.find(u => u.email.toLowerCase() === lowerEmail);
+    let existing = allUsers.find(u => u.email.trim().toLowerCase() === lowerEmail);
     if (!existing) {
       existing = {
         id: `user-${Date.now()}`,
@@ -853,6 +1048,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       existing = {
         ...existing,
+        email: lowerEmail,
         role: isSuper
           ? 'super_admin'
           : existing.role === 'super_admin'
@@ -864,7 +1060,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         lastActive: new Date().toISOString(),
       };
       const updated = allUsers.map(u =>
-        u.email.toLowerCase() === lowerEmail ? existing! : u
+        u.email.trim().toLowerCase() === lowerEmail ? existing! : u
       );
       saveAllUsers(updated);
     }
@@ -873,7 +1069,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(existing);
     localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(existing));
 
-    // Also trigger a full background refresh
     void refreshUsers();
   };
 
@@ -983,7 +1178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!cleanInput) return;
 
     const target = allUsers.find(
-      u => u.id === cleanInput || u.email.toLowerCase() === cleanInput.toLowerCase()
+      u => u.id === cleanInput || u.email.trim().toLowerCase() === cleanInput.toLowerCase()
     );
     const targetEmail = (
       target?.email || (cleanInput.includes('@') ? cleanInput : '')
@@ -996,41 +1191,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const nowTs = Date.now();
+    const nextDeletedSnapshot: Record<string, number> = {};
 
     // 1. Record deletion tombstone in localStorage so deleted user is not resurrected
-    if (targetEmail) {
-      try {
-        const rawDel = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
-        const parsedDel = rawDel ? JSON.parse(rawDel) : {};
-        parsedDel[targetEmail] = nowTs;
-        localStorage.setItem(STORAGE_DELETED_EMAILS_KEY, JSON.stringify(parsedDel));
-      } catch {
-        // ignore
+    try {
+      const rawDel = localStorage.getItem(STORAGE_DELETED_EMAILS_KEY);
+      if (rawDel) {
+        const parsedDel = JSON.parse(rawDel);
+        if (parsedDel && typeof parsedDel === 'object') {
+          for (const [k, v] of Object.entries(parsedDel)) {
+            nextDeletedSnapshot[k.trim().toLowerCase()] = Number(v) || 0;
+          }
+        }
+      }
+      if (targetEmail) {
+        nextDeletedSnapshot[targetEmail] = nowTs;
+      }
+      localStorage.setItem(
+        STORAGE_DELETED_EMAILS_KEY,
+        JSON.stringify(nextDeletedSnapshot)
+      );
+    } catch {
+      // ignore
+    }
+
+    // 2. Remove from allUsers (case-insensitive)
+    const nextUsersSnapshot = allUsers.filter(
+      u =>
+        u.id !== cleanInput &&
+        (!targetEmail || u.email.trim().toLowerCase() !== targetEmail)
+    );
+    setAllUsers(nextUsersSnapshot);
+    localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsersSnapshot));
+
+    // 3. Remove from permissionsMap (case-insensitive)
+    const nextPermsSnapshot: Record<string, TabPermissions> = {};
+    for (const [k, v] of Object.entries(permissionsMap)) {
+      const kNorm = k.trim().toLowerCase();
+      if (kNorm !== targetEmail) {
+        nextPermsSnapshot[kNorm] = v;
       }
     }
+    setPermissionsMap(nextPermsSnapshot);
+    localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(nextPermsSnapshot));
 
-    // 2. Remove from allUsers
-    setAllUsers(prev => {
-      const updated = prev.filter(
-        u =>
-          u.id !== cleanInput &&
-          (!targetEmail || u.email.toLowerCase() !== targetEmail)
-      );
-      localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(updated));
-      return updated;
-    });
-
-    // 3. Remove from permissionsMap
-    if (targetEmail) {
-      setPermissionsMap(prev => {
-        const next = { ...prev };
-        delete next[targetEmail];
-        localStorage.setItem(STORAGE_PERMISSIONS_KEY, JSON.stringify(next));
-        return next;
-      });
-    }
-
-    // 4. Delete from both `/api/users` and `/api/permissions` on the server
+    // 4. Delete from Server APIs AND publish updated snapshot to Cloud Sync channel
     try {
       const qs = `id=${encodeURIComponent(cleanInput)}&email=${encodeURIComponent(
         targetEmail || ''
@@ -1038,6 +1243,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await Promise.all([
         fetch(`/api/users?${qs}`, { method: 'DELETE' }),
         fetch(`/api/permissions?${qs}`, { method: 'DELETE' }),
+        publishCloudPermsSnapshot({
+          permissions: nextPermsSnapshot,
+          users: nextUsersSnapshot,
+          deletedEmails: nextDeletedSnapshot,
+        }),
       ]);
     } catch {
       // ignore

@@ -4,6 +4,7 @@ import os from 'os';
 import { UserProfile, TabPermissions } from '@/types/exam';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
+const CLOUD_PERMS_TOPIC = 'aztool_cloud_perms_db_v5_9c8d7e6f5a4b';
 
 export const SUPER_PERMS: TabPermissions = {
   canAudit: true,
@@ -38,7 +39,10 @@ export function normalizePermissions(
     canMix: Boolean(raw.canMix),
     canPdfStudio: Boolean(raw.canPdfStudio),
     canThesisAudit: Boolean(raw.canThesisAudit),
-    updatedAt: typeof raw.updatedAt === 'number' && raw.updatedAt > 0 ? raw.updatedAt : fallbackUpdatedAt,
+    updatedAt:
+      typeof raw.updatedAt === 'number' && raw.updatedAt > 0
+        ? raw.updatedAt
+        : fallbackUpdatedAt,
   };
 }
 
@@ -57,7 +61,8 @@ function getStoragePath(filename: string): string {
   }
 }
 
-interface UnifiedStoreState {
+export interface UnifiedStoreState {
+  rev: number;
   users: UserProfile[];
   permissions: Record<string, TabPermissions>;
   deletedEmails: Record<string, number>;
@@ -78,116 +83,113 @@ const defaultAdminUser: UserProfile = {
 
 const globalForStore = globalThis as unknown as {
   __azUnifiedStore?: UnifiedStoreState;
+  __azLastCloudSyncMs?: number;
 };
 
-export function readUnifiedStore(): UnifiedStoreState {
-  if (!globalForStore.__azUnifiedStore) {
-    globalForStore.__azUnifiedStore = {
-      users: [defaultAdminUser],
-      permissions: { [SUPER_ADMIN_EMAIL]: { ...SUPER_PERMS } },
-      deletedEmails: {},
-    };
+/**
+ * Merges an incoming state snapshot (from disk or cloud) into the target state
+ * using per-email `updatedAt` and `deletedEmails` timestamps so the newest action
+ * (whether grant, revoke, delete, or re-add) always wins across all containers!
+ */
+function mergeIntoState(target: UnifiedStoreState, incoming: Partial<UnifiedStoreState>): void {
+  if (!incoming || typeof incoming !== 'object') return;
+
+  if (typeof incoming.rev === 'number' && incoming.rev > target.rev) {
+    target.rev = incoming.rev;
   }
 
-  const state = globalForStore.__azUnifiedStore;
-
-  // 1. Read deletedEmails tombstones
-  try {
-    const delFile = getStoragePath('deleted-users.json');
-    if (fs.existsSync(delFile)) {
-      const parsedDel = JSON.parse(fs.readFileSync(delFile, 'utf-8'));
-      if (parsedDel && typeof parsedDel === 'object') {
-        for (const [em, ts] of Object.entries(parsedDel)) {
-          const norm = em.trim().toLowerCase();
-          const numTs = Number(ts) || 0;
-          if (!state.deletedEmails[norm] || numTs > state.deletedEmails[norm]) {
-            state.deletedEmails[norm] = numTs;
-          }
-        }
+  // 1. Merge deletedEmails tombstones
+  if (incoming.deletedEmails && typeof incoming.deletedEmails === 'object') {
+    for (const [em, ts] of Object.entries(incoming.deletedEmails)) {
+      const norm = em.trim().toLowerCase();
+      if (!norm || norm === SUPER_ADMIN_EMAIL) continue;
+      const numTs = Number(ts) || 0;
+      if (!target.deletedEmails[norm] || numTs > target.deletedEmails[norm]) {
+        target.deletedEmails[norm] = numTs;
       }
     }
-  } catch {
-    // ignore
   }
 
-  // 2. Read permissions.json
-  try {
-    const permFile = getStoragePath('permissions.json');
-    if (fs.existsSync(permFile)) {
-      const parsedPerms = JSON.parse(fs.readFileSync(permFile, 'utf-8'));
-      if (parsedPerms && typeof parsedPerms === 'object') {
-        for (const [em, pVal] of Object.entries(parsedPerms)) {
-          const norm = em.trim().toLowerCase();
-          if (!norm) continue;
-          const isSuper = norm === SUPER_ADMIN_EMAIL;
-          const incoming = normalizePermissions(pVal as any, isSuper, 1);
-          const deletedAt = state.deletedEmails[norm] || 0;
-          if (!isSuper && deletedAt > (incoming.updatedAt || 0)) {
-            continue;
-          }
-          const existing = state.permissions[norm];
-          if (!existing || (incoming.updatedAt || 0) >= (existing.updatedAt || 0)) {
-            state.permissions[norm] = incoming;
-          }
-        }
+  // 2. Merge permissions
+  if (incoming.permissions && typeof incoming.permissions === 'object') {
+    for (const [em, pVal] of Object.entries(incoming.permissions)) {
+      const norm = em.trim().toLowerCase();
+      if (!norm) continue;
+      const isSuper = norm === SUPER_ADMIN_EMAIL;
+      const normIncoming = normalizePermissions(pVal as any, isSuper, 1);
+      const delTs = target.deletedEmails[norm] || 0;
+
+      if (!isSuper && delTs > (normIncoming.updatedAt || 0)) {
+        delete target.permissions[norm];
+        continue;
+      }
+      if (!isSuper && (normIncoming.updatedAt || 0) > delTs && delTs > 0) {
+        delete target.deletedEmails[norm];
+      }
+
+      const existing = target.permissions[norm];
+      if (!existing || (normIncoming.updatedAt || 0) >= (existing.updatedAt || 0)) {
+        target.permissions[norm] = normIncoming;
       }
     }
-  } catch {
-    // ignore
   }
 
-  // 3. Read users.json
+  // 3. Merge users
   const userMap = new Map<string, UserProfile>();
-  for (const u of state.users) {
+  for (const u of target.users) {
     if (u?.email) {
       const norm = u.email.trim().toLowerCase();
+      if (norm !== SUPER_ADMIN_EMAIL) {
+        const delTs = target.deletedEmails[norm] || 0;
+        const pTs = target.permissions[norm]?.updatedAt || u.permissions?.updatedAt || 0;
+        if (delTs > pTs) continue;
+      }
       userMap.set(norm, { ...u, email: norm });
     }
   }
 
-  try {
-    const usersFile = getStoragePath('users.json');
-    if (fs.existsSync(usersFile)) {
-      const parsedUsers = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
-      if (Array.isArray(parsedUsers)) {
-        for (const u of parsedUsers) {
-          if (!u?.email) continue;
-          const norm = String(u.email).trim().toLowerCase();
-          const isSuper = norm === SUPER_ADMIN_EMAIL;
-          const uPerm = normalizePermissions(u.permissions, isSuper, 1);
-          const deletedAt = state.deletedEmails[norm] || 0;
-          if (!isSuper && deletedAt > (uPerm.updatedAt || 0)) {
-            userMap.delete(norm);
-            continue;
-          }
-          const prevUser = userMap.get(norm);
-          const prevPerm = state.permissions[norm] || prevUser?.permissions;
-          const chosenPerm =
-            prevPerm && (prevPerm.updatedAt || 0) > (uPerm.updatedAt || 0)
-              ? normalizePermissions(prevPerm, isSuper)
-              : uPerm;
+  if (Array.isArray(incoming.users)) {
+    for (const u of incoming.users) {
+      if (!u?.email) continue;
+      const norm = String(u.email).trim().toLowerCase();
+      const isSuper = norm === SUPER_ADMIN_EMAIL;
+      const uPerm = normalizePermissions(u.permissions, isSuper, 1);
+      const bestPerm =
+        target.permissions[norm] &&
+        (target.permissions[norm].updatedAt || 0) >= (uPerm.updatedAt || 0)
+          ? target.permissions[norm]
+          : uPerm;
 
-          state.permissions[norm] = chosenPerm;
-          userMap.set(norm, {
-            ...(prevUser || u),
-            ...u,
-            email: norm,
-            role: isSuper ? 'super_admin' : u.role || prevUser?.role || 'free',
-            permissions: chosenPerm,
-          });
-        }
+      const delTs = target.deletedEmails[norm] || 0;
+      if (!isSuper && delTs > (bestPerm.updatedAt || 0)) {
+        userMap.delete(norm);
+        delete target.permissions[norm];
+        continue;
       }
+      if (!isSuper && (bestPerm.updatedAt || 0) > delTs && delTs > 0) {
+        delete target.deletedEmails[norm];
+      }
+
+      target.permissions[norm] = bestPerm;
+      const prevUser = userMap.get(norm);
+      userMap.set(norm, {
+        ...(prevUser || u),
+        ...u,
+        email: norm,
+        displayName: u.displayName || prevUser?.displayName || norm.split('@')[0],
+        photoURL: u.photoURL || prevUser?.photoURL,
+        role: isSuper ? 'super_admin' : u.role || prevUser?.role || 'free',
+        permissions: bestPerm,
+      });
     }
-  } catch {
-    // ignore
   }
 
-  // 4. Ensure every email in state.permissions has a synchronized entry in userMap
-  for (const [norm, perm] of Object.entries(state.permissions)) {
+  // 4. Ensure every email in target.permissions is present in userMap and clean up deleted ones
+  for (const [norm, perm] of Object.entries(target.permissions)) {
     const isSuper = norm === SUPER_ADMIN_EMAIL;
-    const deletedAt = state.deletedEmails[norm] || 0;
-    if (!isSuper && deletedAt > (perm.updatedAt || 0)) {
-      delete state.permissions[norm];
+    const delTs = target.deletedEmails[norm] || 0;
+    if (!isSuper && delTs > (perm.updatedAt || 0)) {
+      delete target.permissions[norm];
       userMap.delete(norm);
       continue;
     }
@@ -211,44 +213,8 @@ export function readUnifiedStore(): UnifiedStoreState {
     }
   }
 
-  // 5. Auto-discover from workspace-vault.json ONLY if not deleted after snapshot creation
-  try {
-    const vaultFile = getStoragePath('workspace-vault.json');
-    if (fs.existsSync(vaultFile)) {
-      const vItems = JSON.parse(fs.readFileSync(vaultFile, 'utf-8'));
-      if (Array.isArray(vItems)) {
-        for (const item of vItems) {
-          const norm = String(item.userEmail || '').trim().toLowerCase();
-          if (!norm || userMap.has(norm)) continue;
-          const snapTime = item.createdAtIso ? new Date(item.createdAtIso).getTime() : 0;
-          const deletedAt = state.deletedEmails[norm] || 0;
-          if (deletedAt > 0 && deletedAt >= snapTime) {
-            continue;
-          }
-          const isSuper = norm === SUPER_ADMIN_EMAIL;
-          const perm = state.permissions[norm] || normalizePermissions(null, isSuper, 1);
-          state.permissions[norm] = perm;
-          userMap.set(norm, {
-            id: `discovered-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            email: norm,
-            displayName: item.userName || norm.split('@')[0],
-            photoURL: item.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
-            role: isSuper ? 'super_admin' : 'free',
-            permissions: perm,
-            createdAt: item.createdAtIso?.split('T')[0] || '2026-11-06',
-            lastActive: item.createdAtIso || '2026-11-06T00:00:00.000Z',
-            examsGeneratedCount: 1,
-            mixCount: 0,
-          });
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-
   // Always enforce super admin
-  state.permissions[SUPER_ADMIN_EMAIL] = { ...SUPER_PERMS };
+  target.permissions[SUPER_ADMIN_EMAIL] = { ...SUPER_PERMS };
   const adminExisting = userMap.get(SUPER_ADMIN_EMAIL) || defaultAdminUser;
   userMap.set(SUPER_ADMIN_EMAIL, {
     ...adminExisting,
@@ -257,11 +223,45 @@ export function readUnifiedStore(): UnifiedStoreState {
     permissions: { ...SUPER_PERMS },
   });
 
-  state.users = Array.from(userMap.values());
+  target.users = Array.from(userMap.values());
+}
+
+export function readUnifiedStoreSync(): UnifiedStoreState {
+  if (!globalForStore.__azUnifiedStore) {
+    globalForStore.__azUnifiedStore = {
+      rev: 1,
+      users: [defaultAdminUser],
+      permissions: { [SUPER_ADMIN_EMAIL]: { ...SUPER_PERMS } },
+      deletedEmails: {},
+    };
+  }
+
+  const state = globalForStore.__azUnifiedStore;
+
+  try {
+    const delFile = getStoragePath('deleted-users.json');
+    const permFile = getStoragePath('permissions.json');
+    const usersFile = getStoragePath('users.json');
+
+    const diskIncoming: Partial<UnifiedStoreState> = {};
+    if (fs.existsSync(delFile)) {
+      diskIncoming.deletedEmails = JSON.parse(fs.readFileSync(delFile, 'utf-8'));
+    }
+    if (fs.existsSync(permFile)) {
+      diskIncoming.permissions = JSON.parse(fs.readFileSync(permFile, 'utf-8'));
+    }
+    if (fs.existsSync(usersFile)) {
+      diskIncoming.users = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+    }
+    mergeIntoState(state, diskIncoming);
+  } catch {
+    // ignore
+  }
+
   return state;
 }
 
-export function writeUnifiedStore(state: UnifiedStoreState): void {
+export function writeUnifiedStoreSync(state: UnifiedStoreState): void {
   globalForStore.__azUnifiedStore = state;
   try {
     fs.writeFileSync(
@@ -292,13 +292,118 @@ export function writeUnifiedStore(state: UnifiedStoreState): void {
   }
 }
 
-export function upsertAdminPermission(
+/**
+ * Pulls latest permissions/users state from the shared Cloud Channel (`ntfy.sh`)
+ * so all Vercel Serverless instances and cold-started containers stay 100% in sync!
+ */
+export async function readUnifiedStore(forceCloudPull = false): Promise<UnifiedStoreState> {
+  const state = readUnifiedStoreSync();
+  const now = Date.now();
+
+  if (
+    !forceCloudPull &&
+    globalForStore.__azLastCloudSyncMs &&
+    now - globalForStore.__azLastCloudSyncMs < 1200
+  ) {
+    return state;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}/json`, {
+      headers: {
+        'X-Poll': '1',
+        'X-Since': 'all',
+        'Cache-Control': 'no-cache',
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const text = await res.text();
+      const lines = text
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        try {
+          const env = JSON.parse(line);
+          if (env.event === 'message') {
+            if (env.attachment?.url) {
+              const attRes = await fetch(env.attachment.url, { cache: 'no-store' });
+              if (attRes.ok) {
+                const attData = await attRes.json();
+                mergeIntoState(state, attData);
+              }
+            } else if (env.message) {
+              const msgData = JSON.parse(env.message);
+              mergeIntoState(state, msgData);
+            }
+          }
+        } catch {
+          // ignore malformed line
+        }
+      }
+      globalForStore.__azLastCloudSyncMs = Date.now();
+      writeUnifiedStoreSync(state);
+    }
+  } catch {
+    // fallback to local memory/disk if offline
+  }
+
+  return state;
+}
+
+/**
+ * Writes state to local memory/disk AND pushes to the shared Cloud Channel (`ntfy.sh`)
+ * so every other Vercel Lambda container immediately sees the change!
+ */
+export async function writeUnifiedStore(state: UnifiedStoreState): Promise<void> {
+  state.rev = (state.rev || 1) + 1;
+  writeUnifiedStoreSync(state);
+  globalForStore.__azLastCloudSyncMs = Date.now();
+
+  const payload = JSON.stringify({
+    rev: state.rev,
+    permissions: state.permissions,
+    users: state.users,
+    deletedEmails: state.deletedEmails,
+  });
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    if (payload.length < 3500) {
+      await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}`, {
+        method: 'POST',
+        body: payload,
+        signal: controller.signal,
+      });
+    } else {
+      await fetch(`https://ntfy.sh/${CLOUD_PERMS_TOPIC}`, {
+        method: 'PUT',
+        headers: { Filename: 'az_perms_state.json' },
+        body: payload,
+        signal: controller.signal,
+      });
+    }
+    clearTimeout(timer);
+  } catch {
+    // ignore cloud network warning
+  }
+}
+
+export async function upsertAdminPermission(
   email: string,
   perms: Partial<TabPermissions>,
   displayName?: string,
   photoURL?: string
-): UnifiedStoreState {
-  const state = readUnifiedStore();
+): Promise<UnifiedStoreState> {
+  const state = await readUnifiedStore(true);
   const norm = email.trim().toLowerCase();
   if (!norm) return state;
 
@@ -337,78 +442,37 @@ export function upsertAdminPermission(
     });
   }
 
-  writeUnifiedStore(state);
+  await writeUnifiedStore(state);
   return state;
 }
 
-export function syncBulkAdminPermissions(
+export async function syncBulkAdminPermissions(
   bulkPerms: Record<string, TabPermissions>,
-  bulkUsers?: UserProfile[]
-): UnifiedStoreState {
-  const state = readUnifiedStore();
+  bulkUsers?: UserProfile[],
+  bulkDeleted?: Record<string, number>
+): Promise<UnifiedStoreState> {
+  const state = await readUnifiedStore(true);
 
-  if (bulkPerms && typeof bulkPerms === 'object') {
-    for (const [em, pVal] of Object.entries(bulkPerms)) {
-      const norm = em.trim().toLowerCase();
-      if (!norm) continue;
-      const isSuper = norm === SUPER_ADMIN_EMAIL;
-      const incoming = normalizePermissions(pVal, isSuper, Date.now());
-      const deletedAt = state.deletedEmails[norm] || 0;
-      if (!isSuper && deletedAt > (incoming.updatedAt || 0)) {
-        continue;
-      }
-      const existing = state.permissions[norm];
-      if (!existing || (incoming.updatedAt || 0) >= (existing.updatedAt || 0)) {
-        state.permissions[norm] = incoming;
-      }
-    }
-  }
+  mergeIntoState(state, {
+    permissions: bulkPerms,
+    users: bulkUsers,
+    deletedEmails: bulkDeleted,
+  });
 
-  if (Array.isArray(bulkUsers)) {
-    for (const u of bulkUsers) {
-      if (!u?.email) continue;
-      const norm = u.email.trim().toLowerCase();
-      const isSuper = norm === SUPER_ADMIN_EMAIL;
-      const deletedAt = state.deletedEmails[norm] || 0;
-      const perm = state.permissions[norm] || normalizePermissions(u.permissions, isSuper, 1);
-      if (!isSuper && deletedAt > (perm.updatedAt || 0)) {
-        continue;
-      }
-      state.permissions[norm] = perm;
-      const idx = state.users.findIndex(item => item.email.toLowerCase() === norm);
-      if (idx >= 0) {
-        state.users[idx] = {
-          ...state.users[idx],
-          displayName: u.displayName || state.users[idx].displayName,
-          photoURL: u.photoURL || state.users[idx].photoURL,
-          permissions: perm,
-        };
-      } else {
-        state.users.push({
-          ...u,
-          email: norm,
-          role: isSuper ? 'super_admin' : u.role || 'free',
-          permissions: perm,
-        });
-      }
-    }
-  }
-
-  writeUnifiedStore(state);
+  await writeUnifiedStore(state);
   return state;
 }
 
-export function recordTeacherLogin(params: {
+export async function recordTeacherLogin(params: {
   email: string;
   displayName?: string;
   photoURL?: string;
   id?: string;
-}): { state: UnifiedStoreState; user: UserProfile } {
-  const state = readUnifiedStore();
+}): Promise<{ state: UnifiedStoreState; user: UserProfile }> {
+  const state = await readUnifiedStore(true);
   const norm = params.email.trim().toLowerCase();
   const isSuper = norm === SUPER_ADMIN_EMAIL;
 
-  // Preserve existing server permissions set by Admin! Never overwrite them on teacher login!
   const existingUserIdx = state.users.findIndex(u => u.email.toLowerCase() === norm);
   const existingPerm =
     state.permissions[norm] ||
@@ -420,7 +484,6 @@ export function recordTeacherLogin(params: {
     ? normalizePermissions(existingPerm, false, existingPerm.updatedAt || 1)
     : { ...DEFAULT_USER_PERMS, updatedAt: 1 };
 
-  delete state.deletedEmails[norm];
   state.permissions[norm] = authoritativePerm;
 
   let finalUser: UserProfile;
@@ -451,12 +514,15 @@ export function recordTeacherLogin(params: {
     state.users.push(finalUser);
   }
 
-  writeUnifiedStore(state);
+  await writeUnifiedStore(state);
   return { state, user: finalUser };
 }
 
-export function deleteTeacherFromStore(idOrEmail: string, explicitEmail?: string): UnifiedStoreState {
-  const state = readUnifiedStore();
+export async function deleteTeacherFromStore(
+  idOrEmail: string,
+  explicitEmail?: string
+): Promise<UnifiedStoreState> {
+  const state = await readUnifiedStore(true);
   const targetById = state.users.find(
     u => u.id === idOrEmail || u.email.toLowerCase() === idOrEmail.toLowerCase()
   );
@@ -480,6 +546,6 @@ export function deleteTeacherFromStore(idOrEmail: string, explicitEmail?: string
     return true;
   });
 
-  writeUnifiedStore(state);
+  await writeUnifiedStore(state);
   return state;
 }

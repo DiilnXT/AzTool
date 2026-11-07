@@ -14,10 +14,11 @@ export async function GET(req: Request) {
   const blocked = enforceApiSecurity(req, { maxRequests: 180 });
   if (blocked) return blocked;
 
-  const state = readUnifiedStore();
+  const state = await readUnifiedStore();
   return NextResponse.json(
     {
       success: true,
+      rev: state.rev,
       count: state.users.length,
       users: state.users,
       permissions: state.permissions,
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     }
 
     if (action === 'login' || (user && permissions === undefined)) {
-      const { state, user: loggedInUser } = recordTeacherLogin({
+      const { state, user: loggedInUser } = await recordTeacherLogin({
         email: targetEmail,
         displayName: displayName || user?.displayName,
         photoURL: photoURL || user?.photoURL,
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: true,
+          rev: state.rev,
           user: loggedInUser,
           count: state.users.length,
           users: state.users,
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const state = upsertAdminPermission(
+    const state = await upsertAdminPermission(
       targetEmail,
       permissions || {},
       displayName || user?.displayName,
@@ -80,6 +82,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: true,
+        rev: state.rev,
         count: state.users.length,
         users: state.users,
         permissions: state.permissions,
@@ -112,11 +115,12 @@ export async function DELETE(req: Request) {
       );
     }
 
-    const state = deleteTeacherFromStore(id || email, email);
+    const state = await deleteTeacherFromStore(id || email, email);
 
     return NextResponse.json(
       {
         success: true,
+        rev: state.rev,
         count: state.users.length,
         users: state.users,
         permissions: state.permissions,
