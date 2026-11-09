@@ -77,6 +77,7 @@ export interface TabPermissions {
   canMix: boolean;
   canPdfStudio?: boolean;
   canThesisAudit?: boolean;
+  adminConfigured?: boolean;
   updatedAt?: number;
 }
 
@@ -93,4 +94,7 @@ export interface UserProfile {
   lastActive: string;
   examsGeneratedCount: number;
   mixCount: number;
+  dailyUsageDate?: string;
+  dailyUsageCount?: number;
+  dailyUsageUpdatedAt?: number;
 }

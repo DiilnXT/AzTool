@@ -4,7 +4,30 @@ import os from 'os';
 import { UserProfile, TabPermissions } from '@/types/exam';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
+export const DAILY_USAGE_LIMIT = 5;
 const CLOUD_PERMS_TOPIC = 'aztool_cloud_perms_db_v5_9c8d7e6f5a4b';
+
+export function getTodayDateKey(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    const d = parts.find(p => p.type === 'day')?.value;
+    if (y && m && d) return `${y}-${m}-${d}`;
+  } catch {
+    // fallback
+  }
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 export const SUPER_PERMS: TabPermissions = {
   canAudit: true,
@@ -12,15 +35,17 @@ export const SUPER_PERMS: TabPermissions = {
   canMix: true,
   canPdfStudio: true,
   canThesisAudit: true,
+  adminConfigured: true,
   updatedAt: 9999999999999,
 };
 
 export const DEFAULT_USER_PERMS: TabPermissions = {
-  canAudit: false,
-  canStandardize: false,
-  canMix: false,
-  canPdfStudio: false,
-  canThesisAudit: false,
+  canAudit: true,
+  canStandardize: true,
+  canMix: true,
+  canPdfStudio: true,
+  canThesisAudit: true,
+  adminConfigured: false,
   updatedAt: 0,
 };
 
@@ -33,12 +58,32 @@ export function normalizePermissions(
   if (!raw || typeof raw !== 'object') {
     return { ...DEFAULT_USER_PERMS, updatedAt: fallbackUpdatedAt };
   }
+  const allFalse =
+    !raw.canAudit &&
+    !raw.canStandardize &&
+    !raw.canMix &&
+    !raw.canPdfStudio &&
+    !raw.canThesisAudit;
+
+  // If this was an auto-created default record before the 5/day Google login update (not explicitly locked by Admin),
+  // enable all features by default so the Google user can use their 5 free uses/day!
+  if (allFalse && !raw.adminConfigured) {
+    return {
+      ...DEFAULT_USER_PERMS,
+      updatedAt:
+        typeof raw.updatedAt === 'number' && raw.updatedAt > 0
+          ? raw.updatedAt
+          : fallbackUpdatedAt,
+    };
+  }
+
   return {
     canAudit: Boolean(raw.canAudit),
     canStandardize: Boolean(raw.canStandardize),
     canMix: Boolean(raw.canMix),
     canPdfStudio: Boolean(raw.canPdfStudio),
     canThesisAudit: Boolean(raw.canThesisAudit),
+    adminConfigured: Boolean(raw.adminConfigured),
     updatedAt:
       typeof raw.updatedAt === 'number' && raw.updatedAt > 0
         ? raw.updatedAt
@@ -172,6 +217,30 @@ function mergeIntoState(target: UnifiedStoreState, incoming: Partial<UnifiedStor
 
       target.permissions[norm] = bestPerm;
       const prevUser = userMap.get(norm);
+      const prevUsageTs = prevUser?.dailyUsageUpdatedAt || 0;
+      const incUsageTs = u.dailyUsageUpdatedAt || 0;
+      let mergedUsageDate = u.dailyUsageDate || prevUser?.dailyUsageDate;
+      let mergedUsageCount = u.dailyUsageCount ?? prevUser?.dailyUsageCount ?? 0;
+      let mergedUsageTs = Math.max(prevUsageTs, incUsageTs);
+
+      if (prevUser?.dailyUsageDate && u.dailyUsageDate) {
+        if (prevUser.dailyUsageDate === u.dailyUsageDate) {
+          if (incUsageTs > prevUsageTs && incUsageTs > 0) {
+            mergedUsageCount = u.dailyUsageCount ?? 0;
+          } else if (prevUsageTs > incUsageTs && prevUsageTs > 0) {
+            mergedUsageCount = prevUser.dailyUsageCount ?? 0;
+          } else {
+            mergedUsageCount = Math.max(prevUser.dailyUsageCount || 0, u.dailyUsageCount || 0);
+          }
+        } else if (prevUser.dailyUsageDate > u.dailyUsageDate) {
+          mergedUsageDate = prevUser.dailyUsageDate;
+          mergedUsageCount = prevUser.dailyUsageCount ?? 0;
+        } else {
+          mergedUsageDate = u.dailyUsageDate;
+          mergedUsageCount = u.dailyUsageCount ?? 0;
+        }
+      }
+
       userMap.set(norm, {
         ...(prevUser || u),
         ...u,
@@ -180,6 +249,9 @@ function mergeIntoState(target: UnifiedStoreState, incoming: Partial<UnifiedStor
         photoURL: u.photoURL || prevUser?.photoURL,
         role: isSuper ? 'super_admin' : u.role || prevUser?.role || 'free',
         permissions: bestPerm,
+        dailyUsageDate: mergedUsageDate,
+        dailyUsageCount: mergedUsageCount,
+        dailyUsageUpdatedAt: mergedUsageTs,
       });
     }
   }
@@ -409,7 +481,8 @@ export async function upsertAdminPermission(
 
   const isSuper = norm === SUPER_ADMIN_EMAIL;
   const nowTs = Date.now();
-  const cleanPerms = normalizePermissions(perms, isSuper, nowTs);
+  const cleanPerms = normalizePermissions({ ...perms, adminConfigured: true }, isSuper, nowTs);
+  cleanPerms.adminConfigured = true;
   cleanPerms.updatedAt = isSuper ? SUPER_PERMS.updatedAt : nowTs;
 
   // Clear any deletion tombstone so re-adding a deleted teacher always works 100%!
@@ -557,4 +630,65 @@ export async function deleteTeacherFromStore(
 
   await writeUnifiedStore(state);
   return state;
+}
+
+export async function recordUserDailyUsage(params: {
+  email: string;
+  dateKey?: string;
+  count?: number;
+  reset?: boolean;
+}): Promise<{ state: UnifiedStoreState; user?: UserProfile }> {
+  const state = await readUnifiedStore(true);
+  const norm = params.email.trim().toLowerCase();
+  if (!norm) return { state };
+
+  const isSuper = norm === SUPER_ADMIN_EMAIL;
+  const todayKey = params.dateKey || getTodayDateKey();
+  const nowTs = Date.now();
+
+  const idx = state.users.findIndex(u => u.email.toLowerCase() === norm);
+  let targetUser: UserProfile;
+
+  if (idx >= 0) {
+    const prev = state.users[idx];
+    const currentCountForToday =
+      prev.dailyUsageDate === todayKey ? prev.dailyUsageCount || 0 : 0;
+    const nextCount = params.reset
+      ? 0
+      : typeof params.count === 'number'
+      ? Math.max(currentCountForToday, params.count)
+      : currentCountForToday + 1;
+
+    targetUser = {
+      ...prev,
+      email: norm,
+      dailyUsageDate: todayKey,
+      dailyUsageCount: isSuper ? 0 : nextCount,
+      dailyUsageUpdatedAt: nowTs,
+      lastActive: new Date().toISOString(),
+    };
+    state.users[idx] = targetUser;
+  } else {
+    const perm = state.permissions[norm] || { ...DEFAULT_USER_PERMS, updatedAt: nowTs };
+    state.permissions[norm] = perm;
+    targetUser = {
+      id: isSuper ? 'admin-001' : `user-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+      email: norm,
+      displayName: norm.split('@')[0],
+      photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
+      role: isSuper ? 'super_admin' : 'free',
+      permissions: perm,
+      createdAt: todayKey,
+      lastActive: new Date().toISOString(),
+      examsGeneratedCount: 0,
+      mixCount: 0,
+      dailyUsageDate: todayKey,
+      dailyUsageCount: isSuper ? 0 : params.reset ? 0 : params.count ?? 1,
+      dailyUsageUpdatedAt: nowTs,
+    };
+    state.users.push(targetUser);
+  }
+
+  await writeUnifiedStore(state);
+  return { state, user: targetUser };
 }

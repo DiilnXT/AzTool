@@ -26,6 +26,8 @@ import {
   type PdfPageThumbnailItem,
 } from '@/lib/pdf-office-engine';
 import { downloadFileMobileSafe } from '@/lib/mobile-download';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/components/ToastProvider';
 
 interface SplitChunksState {
   zipBlob: Blob;
@@ -34,6 +36,8 @@ interface SplitChunksState {
 }
 
 export function PdfOfficeStudio() {
+  const { isDailyLimitReached, consumeDailyQuota, openLimitModal } = useAuth();
+  const toast = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [detectedPageCount, setDetectedPageCount] = useState<number>(0);
 
@@ -90,6 +94,15 @@ export function PdfOfficeStudio() {
 
   const handleSelectFile = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Cắt & Tách Trang PDF');
+      return;
+    }
+
     const f = files[0];
     clearResults();
     setSelectedFile(f);
@@ -118,6 +131,17 @@ export function PdfOfficeStudio() {
   const handleRunSplitPdf = async () => {
     if (!selectedFile) {
       setErrorMsg('Vui lòng tải lên tệp PDF cần cắt/tách trang.');
+      return;
+    }
+
+    if (!consumeDailyQuota('Cắt & Tách Trang PDF')) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      setErrorMsg(
+        'Bạn đã sử dụng hết 5/5 lần trong ngày hôm nay (tính từ 00h00 đến 23h59). Không thể sử dụng thêm tính năng hôm nay.'
+      );
       return;
     }
 

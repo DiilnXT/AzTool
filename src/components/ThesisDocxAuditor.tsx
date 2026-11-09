@@ -388,7 +388,7 @@ async function createSampleThesisWithErrorsDocx(): Promise<File> {
 }
 
 export function ThesisDocxAuditor() {
-  const { user } = useAuth();
+  const { user, consumeDailyQuota } = useAuth();
   const toast = useToast();
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -407,6 +407,15 @@ export function ThesisDocxAuditor() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleLoadAndAnalyzeFile = async (file: File) => {
+    if (!consumeDailyQuota('Kiểm Duyệt Đề Án & Giáo Trình Word')) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      setIsAnalyzing(false);
+      return;
+    }
+
     setIsAnalyzing(true);
     setLoadingProgress(8);
     setCatalogsInserted(false);

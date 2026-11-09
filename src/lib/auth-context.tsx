@@ -6,13 +6,43 @@ import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 import { getProtectedGoogleClientId, initClientSecurityShield } from '@/lib/security-shield';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
+export const DAILY_USAGE_LIMIT = 5;
 const STORAGE_USER_KEY = 'aztool_current_user';
 const STORAGE_ALL_USERS_KEY = 'aztool_user_database';
 const STORAGE_SYSTEM_CONFIG = 'aztool_system_config';
 const STORAGE_THEME_KEY = 'aztool_theme_mode';
 const STORAGE_PERMISSIONS_KEY = 'aztool_user_permissions';
 const STORAGE_DELETED_EMAILS_KEY = 'aztool_deleted_emails';
+const STORAGE_DAILY_USAGE_KEY = 'aztool_daily_usage_map_v1';
 const CLOUD_PERMS_TOPIC = 'aztool_cloud_perms_db_v5_9c8d7e6f5a4b';
+
+export function getTodayDateKey(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    const d = parts.find(p => p.type === 'day')?.value;
+    if (y && m && d) return `${y}-${m}-${d}`;
+  } catch {
+    // fallback
+  }
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export interface DailyUsageEntry {
+  date: string;
+  count: number;
+  updatedAt: number;
+}
 
 declare global {
   interface Window {
@@ -29,11 +59,12 @@ export interface SystemConfig {
 }
 
 export const defaultUserPermissions: TabPermissions = {
-  canAudit: false,
-  canStandardize: false,
-  canMix: false,
-  canPdfStudio: false,
-  canThesisAudit: false,
+  canAudit: true,
+  canStandardize: true,
+  canMix: true,
+  canPdfStudio: true,
+  canThesisAudit: true,
+  adminConfigured: false,
   updatedAt: 0,
 };
 
@@ -43,6 +74,7 @@ export const superAdminPermissions: TabPermissions = {
   canMix: true,
   canPdfStudio: true,
   canThesisAudit: true,
+  adminConfigured: true,
   updatedAt: 9999999999999,
 };
 
@@ -55,12 +87,30 @@ export function normalizeClientPermissions(
   if (!raw || typeof raw !== 'object') {
     return { ...defaultUserPermissions, updatedAt: fallbackUpdatedAt };
   }
+  const allFalse =
+    !raw.canAudit &&
+    !raw.canStandardize &&
+    !raw.canMix &&
+    !raw.canPdfStudio &&
+    !raw.canThesisAudit;
+
+  if (allFalse && !raw.adminConfigured) {
+    return {
+      ...defaultUserPermissions,
+      updatedAt:
+        typeof raw.updatedAt === 'number' && raw.updatedAt > 0
+          ? raw.updatedAt
+          : fallbackUpdatedAt,
+    };
+  }
+
   return {
     canAudit: Boolean(raw.canAudit),
     canStandardize: Boolean(raw.canStandardize),
     canMix: Boolean(raw.canMix),
     canPdfStudio: Boolean(raw.canPdfStudio),
     canThesisAudit: Boolean(raw.canThesisAudit),
+    adminConfigured: Boolean(raw.adminConfigured),
     updatedAt:
       typeof raw.updatedAt === 'number' && raw.updatedAt > 0
         ? raw.updatedAt
@@ -258,6 +308,17 @@ interface AuthContextType {
   hasTabAccess: (
     tab: 'ai-audit' | 'standardize' | 'mix' | 'exam-tools' | 'thesis-auditor' | 'pdf-studio'
   ) => boolean;
+  dailyLimit: number;
+  dailyUsed: number;
+  dailyRemaining: number;
+  isDailyLimitReached: boolean;
+  todayDateKey: string;
+  limitModalState: { isOpen: boolean; featureName?: string } | null;
+  openLimitModal: (featureName?: string) => void;
+  closeLimitModal: () => void;
+  consumeDailyQuota: (featureName?: string) => boolean;
+  resetUserDailyQuota: (email: string) => Promise<void>;
+  getUserDailyUsed: (email: string) => number;
   updateUserPermissions: (
     email: string,
     perms: TabPermissions,
@@ -303,6 +364,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissionsMap, setPermissionsMap] = useState<Record<string, TabPermissions>>({
     [SUPER_ADMIN_EMAIL.toLowerCase()]: superAdminPermissions,
   });
+  const [dailyUsageMap, setDailyUsageMap] = useState<Record<string, DailyUsageEntry>>({});
+  const [todayDateKey, setTodayDateKey] = useState<string>('');
+  const [limitModalState, setLimitModalState] = useState<{
+    isOpen: boolean;
+    featureName?: string;
+  } | null>(null);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>(defaultSystemConfig);
   const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [isLoaded, setIsLoaded] = useState(false);
@@ -311,6 +378,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+
+  const dailyUsageMapRef = useRef<Record<string, DailyUsageEntry>>({});
+  useEffect(() => {
+    dailyUsageMapRef.current = dailyUsageMap;
+  }, [dailyUsageMap]);
+
+  // Watch for day rollover at 00:00 so quota resets automatically at 00h00
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkDateRollover = () => {
+      const latestKey = getTodayDateKey();
+      setTodayDateKey(prev => (prev !== latestKey ? latestKey : prev));
+    };
+    checkDateRollover();
+    const timer = window.setInterval(checkDateRollover, 15000);
+    window.addEventListener('focus', checkDateRollover);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', checkDateRollover);
+    };
+  }, []);
 
   // Initialize Security Shield & Google Identity Services Script
   useEffect(() => {
@@ -420,12 +508,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             serverPerms[norm] = bestPerm;
             const prevU = serverUsersMap.get(norm);
+            const prevUsageTs = prevU?.dailyUsageUpdatedAt || 0;
+            const incUsageTs = su.dailyUsageUpdatedAt || 0;
+            let mergedUsageDate = su.dailyUsageDate || prevU?.dailyUsageDate;
+            let mergedUsageCount = su.dailyUsageCount ?? prevU?.dailyUsageCount ?? 0;
+            let mergedUsageTs = Math.max(prevUsageTs, incUsageTs);
+
+            if (prevU?.dailyUsageDate && su.dailyUsageDate) {
+              if (prevU.dailyUsageDate === su.dailyUsageDate) {
+                if (incUsageTs > prevUsageTs && incUsageTs > 0) {
+                  mergedUsageCount = su.dailyUsageCount ?? 0;
+                } else if (prevUsageTs > incUsageTs && prevUsageTs > 0) {
+                  mergedUsageCount = prevU.dailyUsageCount ?? 0;
+                } else {
+                  mergedUsageCount = Math.max(prevU.dailyUsageCount || 0, su.dailyUsageCount || 0);
+                }
+              } else if (prevU.dailyUsageDate > su.dailyUsageDate) {
+                mergedUsageDate = prevU.dailyUsageDate;
+                mergedUsageCount = prevU.dailyUsageCount ?? 0;
+              } else {
+                mergedUsageDate = su.dailyUsageDate;
+                mergedUsageCount = su.dailyUsageCount ?? 0;
+              }
+            }
+
             serverUsersMap.set(norm, {
               ...(prevU || {}),
               ...su,
               email: norm,
               displayName: su.displayName || prevU?.displayName || norm.split('@')[0],
               permissions: bestPerm,
+              dailyUsageDate: mergedUsageDate,
+              dailyUsageCount: mergedUsageCount,
+              dailyUsageUpdatedAt: mergedUsageTs,
             });
           }
         }
@@ -612,6 +727,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Sync daily usage map (00:00 to 23:59) across local storage & server/cloud users
+      const currentDayKey = getTodayDateKey();
+      setTodayDateKey(currentDayKey);
+      const nextDailyMap: Record<string, DailyUsageEntry> = { ...dailyUsageMapRef.current };
+      try {
+        const rawDaily = localStorage.getItem(STORAGE_DAILY_USAGE_KEY);
+        if (rawDaily) {
+          const parsedDaily = JSON.parse(rawDaily);
+          if (parsedDaily && typeof parsedDaily === 'object') {
+            for (const [emKey, entry] of Object.entries(parsedDaily)) {
+              const normEm = emKey.trim().toLowerCase();
+              const dObj = entry as DailyUsageEntry;
+              if (dObj && typeof dObj.date === 'string') {
+                const prev = nextDailyMap[normEm];
+                if (!prev || (dObj.updatedAt || 0) >= (prev.updatedAt || 0)) {
+                  nextDailyMap[normEm] = dObj;
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      for (const [norm, uItem] of userMap.entries()) {
+        const localEntry = nextDailyMap[norm];
+        const serverDate = uItem.dailyUsageDate;
+        const serverCount = uItem.dailyUsageCount || 0;
+        const serverTs = uItem.dailyUsageUpdatedAt || 0;
+
+        if (serverDate === currentDayKey && localEntry?.date === currentDayKey) {
+          if (serverTs > (localEntry.updatedAt || 0) && serverTs > 0) {
+            nextDailyMap[norm] = {
+              date: currentDayKey,
+              count: serverCount,
+              updatedAt: serverTs,
+            };
+          } else {
+            const bestCount = Math.max(localEntry.count || 0, serverCount);
+            nextDailyMap[norm] = {
+              date: currentDayKey,
+              count: bestCount,
+              updatedAt: Math.max(localEntry.updatedAt || 0, serverTs),
+            };
+          }
+        } else if (serverDate === currentDayKey) {
+          nextDailyMap[norm] = {
+            date: currentDayKey,
+            count: serverCount,
+            updatedAt: serverTs || Date.now(),
+          };
+        }
+
+        const resolvedDaily = nextDailyMap[norm];
+        if (resolvedDaily && resolvedDaily.date === currentDayKey) {
+          userMap.set(norm, {
+            ...uItem,
+            dailyUsageDate: currentDayKey,
+            dailyUsageCount: resolvedDaily.count,
+            dailyUsageUpdatedAt: resolvedDaily.updatedAt,
+          });
+        }
+      }
+
+      dailyUsageMapRef.current = nextDailyMap;
+      setDailyUsageMap({ ...nextDailyMap });
+      localStorage.setItem(STORAGE_DAILY_USAGE_KEY, JSON.stringify(nextDailyMap));
+
       const mergedList = Array.from(userMap.values());
       setAllUsers(mergedList);
       setPermissionsMap({ ...mergedPerms });
@@ -632,6 +816,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? rawPerm
           : defaultUserPermissions;
 
+        const currentDaily = nextDailyMap[normCurrent];
+        const latestDailyDate =
+          currentDaily?.date === currentDayKey ? currentDayKey : currentLoggedUser.dailyUsageDate;
+        const latestDailyCount =
+          currentDaily?.date === currentDayKey ? currentDaily.count : 0;
+
         const prevPerm = currentLoggedUser.permissions;
         const hasChanged =
           !prevPerm ||
@@ -639,7 +829,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           Boolean(prevPerm.canStandardize) !== Boolean(latestPermForCurrent.canStandardize) ||
           Boolean(prevPerm.canMix) !== Boolean(latestPermForCurrent.canMix) ||
           Boolean(prevPerm.canPdfStudio) !== Boolean(latestPermForCurrent.canPdfStudio) ||
-          Boolean(prevPerm.canThesisAudit) !== Boolean(latestPermForCurrent.canThesisAudit);
+          Boolean(prevPerm.canThesisAudit) !== Boolean(latestPermForCurrent.canThesisAudit) ||
+          currentLoggedUser.dailyUsageDate !== latestDailyDate ||
+          (currentLoggedUser.dailyUsageCount || 0) !== latestDailyCount;
 
         if (hasChanged) {
           const updatedSelf: UserProfile = {
@@ -647,6 +839,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: normCurrent,
             role: isSuper ? 'super_admin' : currentLoggedUser.role,
             permissions: latestPermForCurrent,
+            dailyUsageDate: latestDailyDate,
+            dailyUsageCount: latestDailyCount,
+            dailyUsageUpdatedAt: currentDaily?.updatedAt || currentLoggedUser.dailyUsageUpdatedAt,
           };
           userRef.current = updatedSelf;
           setUser(updatedSelf);
@@ -744,6 +939,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setAllUsers(usersList);
 
+      // 4b. Daily Usage Map
+      const initialDailyMap: Record<string, DailyUsageEntry> = {};
+      const storedDaily = localStorage.getItem(STORAGE_DAILY_USAGE_KEY);
+      if (storedDaily) {
+        try {
+          const parsedDaily = JSON.parse(storedDaily);
+          if (parsedDaily && typeof parsedDaily === 'object') {
+            for (const [emKey, val] of Object.entries(parsedDaily)) {
+              initialDailyMap[emKey.trim().toLowerCase()] = val as DailyUsageEntry;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      dailyUsageMapRef.current = initialDailyMap;
+      setDailyUsageMap(initialDailyMap);
+
       // 5. Current User
       const storedUser =
         localStorage.getItem(STORAGE_USER_KEY) || localStorage.getItem('deq_current_user');
@@ -759,6 +972,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             initialPerms[normEmail] || parsed.permissions,
             false
           );
+          const todayKey = getTodayDateKey();
+          const dEntry = initialDailyMap[normEmail];
+          if (dEntry && dEntry.date === todayKey) {
+            parsed.dailyUsageDate = todayKey;
+            parsed.dailyUsageCount = Math.max(parsed.dailyUsageCount || 0, dEntry.count || 0);
+            parsed.dailyUsageUpdatedAt = dEntry.updatedAt;
+          }
         }
         userRef.current = parsed;
         setUser(parsed);
@@ -787,7 +1007,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (
         e.key === STORAGE_PERMISSIONS_KEY ||
         e.key === STORAGE_ALL_USERS_KEY ||
-        e.key === STORAGE_USER_KEY
+        e.key === STORAGE_USER_KEY ||
+        e.key === STORAGE_DAILY_USAGE_KEY
       ) {
         void refreshUsers();
       }
@@ -872,6 +1093,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           canMix: Boolean(perms.canMix),
           canPdfStudio: Boolean(perms.canPdfStudio),
           canThesisAudit: Boolean(perms.canThesisAudit),
+          adminConfigured: true,
           updatedAt: nowTs,
         };
 
@@ -1016,6 +1238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             canMix: Boolean(p.canMix),
             canPdfStudio: Boolean(p.canPdfStudio),
             canThesisAudit: Boolean(p.canThesisAudit),
+            adminConfigured: true,
             updatedAt: nowTs,
           };
     }
@@ -1476,6 +1699,198 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_SYSTEM_CONFIG, JSON.stringify(merged));
   };
 
+  const getUserDailyUsed = useCallback(
+    (email: string): number => {
+      const norm = (email || '').trim().toLowerCase();
+      if (!norm || !todayDateKey) return 0;
+      if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return 0;
+      const mapEntry = dailyUsageMap[norm];
+      const uFound = allUsers.find(u => u.email.trim().toLowerCase() === norm);
+      const mapCount =
+        mapEntry && mapEntry.date === todayDateKey ? mapEntry.count || 0 : 0;
+      const userCount =
+        uFound && uFound.dailyUsageDate === todayDateKey
+          ? uFound.dailyUsageCount || 0
+          : 0;
+      return Math.max(mapCount, userCount);
+    },
+    [dailyUsageMap, allUsers, todayDateKey]
+  );
+
+  const activeDayKey = todayDateKey;
+  const dailyUsed = (() => {
+    if (!user?.email || !activeDayKey) return 0;
+    if (isSuperAdmin) return 0;
+    const norm = user.email.trim().toLowerCase();
+    const mapEntry = dailyUsageMap[norm];
+    const mapCount = mapEntry && mapEntry.date === activeDayKey ? mapEntry.count || 0 : 0;
+    const selfCount =
+      user.dailyUsageDate === activeDayKey ? user.dailyUsageCount || 0 : 0;
+    return Math.max(mapCount, selfCount);
+  })();
+
+  const dailyLimit = DAILY_USAGE_LIMIT;
+  const dailyRemaining = isSuperAdmin
+    ? 999999
+    : Math.max(0, DAILY_USAGE_LIMIT - dailyUsed);
+  const isDailyLimitReached = Boolean(
+    user && !isSuperAdmin && dailyUsed >= DAILY_USAGE_LIMIT
+  );
+
+  const openLimitModal = useCallback((featureName?: string) => {
+    setLimitModalState({ isOpen: true, featureName });
+  }, []);
+
+  const closeLimitModal = useCallback(() => {
+    setLimitModalState(null);
+  }, []);
+
+  const consumeDailyQuota = useCallback(
+    (featureName?: string): boolean => {
+      const currentUser = userRef.current;
+      if (!currentUser?.email) return false;
+      const norm = currentUser.email.trim().toLowerCase();
+      if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) {
+        return true;
+      }
+
+      const dayKey = getTodayDateKey();
+      setTodayDateKey(dayKey);
+
+      const mapEntry = dailyUsageMapRef.current[norm];
+      const mapCount = mapEntry && mapEntry.date === dayKey ? mapEntry.count || 0 : 0;
+      const selfCount =
+        currentUser.dailyUsageDate === dayKey ? currentUser.dailyUsageCount || 0 : 0;
+      const currentUsed = Math.max(mapCount, selfCount);
+
+      if (currentUsed >= DAILY_USAGE_LIMIT) {
+        setLimitModalState({ isOpen: true, featureName });
+        return false;
+      }
+
+      const nextCount = currentUsed + 1;
+      const nowTs = Date.now();
+      const nextEntry: DailyUsageEntry = {
+        date: dayKey,
+        count: nextCount,
+        updatedAt: nowTs,
+      };
+
+      const nextMap: Record<string, DailyUsageEntry> = {
+        ...dailyUsageMapRef.current,
+        [norm]: nextEntry,
+      };
+      dailyUsageMapRef.current = nextMap;
+      setDailyUsageMap(nextMap);
+      localStorage.setItem(STORAGE_DAILY_USAGE_KEY, JSON.stringify(nextMap));
+
+      const updatedSelf: UserProfile = {
+        ...currentUser,
+        email: norm,
+        dailyUsageDate: dayKey,
+        dailyUsageCount: nextCount,
+        dailyUsageUpdatedAt: nowTs,
+        lastActive: new Date().toISOString(),
+      };
+      userRef.current = updatedSelf;
+      setUser(updatedSelf);
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
+
+      setAllUsers(prev => {
+        const updatedList = prev.map(u =>
+          u.email.trim().toLowerCase() === norm
+            ? {
+                ...u,
+                dailyUsageDate: dayKey,
+                dailyUsageCount: nextCount,
+                dailyUsageUpdatedAt: nowTs,
+                lastActive: updatedSelf.lastActive,
+              }
+            : u
+        );
+        localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(updatedList));
+        return updatedList;
+      });
+
+      void fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'consume_quota',
+          email: norm,
+          dateKey: dayKey,
+          count: nextCount,
+        }),
+      }).catch(() => null);
+
+      return true;
+    },
+    []
+  );
+
+  const resetUserDailyQuota = useCallback(
+    async (email: string) => {
+      const norm = (email || '').trim().toLowerCase();
+      if (!norm) return;
+      const dayKey = getTodayDateKey();
+      const nowTs = Date.now();
+      const resetEntry: DailyUsageEntry = {
+        date: dayKey,
+        count: 0,
+        updatedAt: nowTs,
+      };
+
+      const nextMap: Record<string, DailyUsageEntry> = {
+        ...dailyUsageMapRef.current,
+        [norm]: resetEntry,
+      };
+      dailyUsageMapRef.current = nextMap;
+      setDailyUsageMap(nextMap);
+      localStorage.setItem(STORAGE_DAILY_USAGE_KEY, JSON.stringify(nextMap));
+
+      const nextUsers = allUsers.map(u =>
+        u.email.trim().toLowerCase() === norm
+          ? {
+              ...u,
+              dailyUsageDate: dayKey,
+              dailyUsageCount: 0,
+              dailyUsageUpdatedAt: nowTs,
+            }
+          : u
+      );
+      setAllUsers(nextUsers);
+      localStorage.setItem(STORAGE_ALL_USERS_KEY, JSON.stringify(nextUsers));
+
+      if (userRef.current && userRef.current.email.trim().toLowerCase() === norm) {
+        const updatedSelf: UserProfile = {
+          ...userRef.current,
+          dailyUsageDate: dayKey,
+          dailyUsageCount: 0,
+          dailyUsageUpdatedAt: nowTs,
+        };
+        userRef.current = updatedSelf;
+        setUser(updatedSelf);
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
+      }
+
+      try {
+        await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'reset_quota',
+            email: norm,
+            dateKey: dayKey,
+            count: 0,
+          }),
+        });
+      } catch {
+        // ignore
+      }
+    },
+    [allUsers]
+  );
+
   const incrementUsage = (type: 'standardize' | 'mix') => {
     if (!user) return;
     const updatedUser = {
@@ -1511,6 +1926,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isPro,
         permissionsMap,
         hasTabAccess,
+        dailyLimit,
+        dailyUsed,
+        dailyRemaining,
+        isDailyLimitReached,
+        todayDateKey: activeDayKey,
+        limitModalState,
+        openLimitModal,
+        closeLimitModal,
+        consumeDailyQuota,
+        resetUserDailyQuota,
+        getUserDailyUsed,
         updateUserPermissions,
         saveBulkPermissions,
         grantAllPermissions,

@@ -13,6 +13,8 @@ import {
   Moon,
   CheckCircle2,
   ShieldCheck,
+  Zap,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type TopWorkspaceTab =
@@ -46,7 +48,11 @@ export function Navbar({
     isSuperAdmin,
     theme,
     toggleTheme,
-    hasTabAccess,
+    dailyLimit,
+    dailyUsed,
+    dailyRemaining,
+    isDailyLimitReached,
+    openLimitModal,
     loginWithRealGoogleOAuth,
     logout,
   } = useAuth();
@@ -61,12 +67,6 @@ export function Navbar({
       if (onOpenLanding) onOpenLanding();
     }
   };
-
-  const grantedTabsCount =
-    (hasTabAccess('ai-audit') ? 1 : 0) +
-    (hasTabAccess('standardize') ? 1 : 0) +
-    (hasTabAccess('mix') ? 1 : 0) +
-    (hasTabAccess('pdf-studio') ? 1 : 0);
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/95 dark:bg-[#11131a]/95 backdrop-blur-xl border-b border-neutral-200/80 dark:border-neutral-800/90 shadow-2xs transition-colors">
@@ -137,6 +137,36 @@ export function Navbar({
           {/* User Account */}
           {user ? (
             <div className="flex items-center gap-2 pl-2 border-l border-neutral-200 dark:border-neutral-800">
+              {/* Live Daily Quota Pill (5 uses/day: 00h00 - 23h59) */}
+              {!isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={() => openLimitModal('Kiểm tra hạn mức sử dụng trong ngày')}
+                  title="Giới hạn 5 lượt sử dụng miễn phí / ngày (Tính từ 00h00 đến 23h59)"
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition canva-tap ${
+                    isDailyLimitReached
+                      ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-300 animate-pulse'
+                      : dailyRemaining <= 1
+                      ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                      : 'bg-purple-50 dark:bg-purple-950/50 border-purple-200 dark:border-purple-800 text-[#7d2ae8] dark:text-purple-300'
+                  }`}
+                >
+                  {isDailyLimitReached ? (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span>Hết limit: {dailyUsed}/{dailyLimit}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>
+                        Hôm nay: {dailyUsed}/{dailyLimit} lượt
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={() => (isSuperAdmin ? setActiveTab('admin') : openSettings())}
                 className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-2xl bg-neutral-100/80 dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 hover:border-[#7d2ae8]/50 transition canva-tap text-left"
@@ -158,9 +188,13 @@ export function Navbar({
                       <span className="text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
                         <Crown className="w-2.5 h-2.5" /> ADMIN TỐI THƯỢNG
                       </span>
+                    ) : isDailyLimitReached ? (
+                      <span className="text-rose-600 dark:text-rose-400 flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Hết lượt (00h-23h59)
+                      </span>
                     ) : (
                       <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                        <ShieldCheck className="w-2.5 h-2.5" /> {grantedTabsCount}/4 Tab Mở
+                        <ShieldCheck className="w-2.5 h-2.5" /> Còn {dailyRemaining}/{dailyLimit} lượt hôm nay
                       </span>
                     )}
                   </div>

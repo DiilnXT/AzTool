@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
-import { ToastProvider } from '@/components/ToastProvider';
+import { ToastProvider, useToast } from '@/components/ToastProvider';
 import { Navbar, TopWorkspaceTab } from '@/components/Navbar';
 import { LandingPage } from '@/components/LandingPage';
 import { ExamStandardizer } from '@/components/ExamStandardizer';
@@ -29,6 +29,10 @@ import {
   ShieldAlert,
   GraduationCap,
   Layers,
+  Clock,
+  Zap,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 
 function TabLockedView({
@@ -114,10 +118,191 @@ function TabLockedView({
   );
 }
 
+function DailyLimitModal() {
+  const {
+    user,
+    isSuperAdmin,
+    dailyLimit,
+    dailyUsed,
+    dailyRemaining,
+    isDailyLimitReached,
+    todayDateKey,
+    limitModalState,
+    closeLimitModal,
+  } = useAuth();
+  const [copied, setCopied] = useState(false);
+
+  if (!limitModalState?.isOpen || !user || isSuperAdmin) return null;
+
+  const handleCopyAdminEmail = () => {
+    navigator.clipboard.writeText('lenhatduy.vietnam@gmail.com');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-[#141724] border-2 border-rose-500/40 dark:border-rose-500/40 shadow-2xl p-6 sm:p-8 text-center space-y-5">
+        <button
+          onClick={closeLimitModal}
+          className="absolute top-4 right-4 p-2 rounded-xl text-neutral-400 hover:text-neutral-700 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
+          aria-label="Đóng thông báo"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div
+          className={`w-16 h-16 rounded-3xl mx-auto flex items-center justify-center shadow-lg ${
+            isDailyLimitReached
+              ? 'bg-gradient-to-br from-rose-500 to-amber-500 text-white shadow-rose-500/30'
+              : 'bg-gradient-to-br from-[#7d2ae8] to-[#00c4cc] text-white shadow-purple-500/30'
+          }`}
+        >
+          {isDailyLimitReached ? (
+            <AlertTriangle className="w-8 h-8" />
+          ) : (
+            <Zap className="w-8 h-8" />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[11px] font-black border ${
+              isDailyLimitReached
+                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                : 'bg-purple-100 text-[#7d2ae8] dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            {isDailyLimitReached
+              ? 'ĐÃ HẾT LIMIT SỬ DỤNG TRONG NGÀY (5/5 LẦN)'
+              : `HẠN MỨC SỬ DỤNG TRONG NGÀY (${dailyUsed}/${dailyLimit} LẦN)`}
+          </span>
+
+          <h3 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white">
+            {isDailyLimitReached
+              ? 'Bạn Đã Dùng Hết 5/5 Lượt Hôm Nay!'
+              : `Còn ${dailyRemaining}/${dailyLimit} Lượt Sử Dụng Hôm Nay`}
+          </h3>
+
+          {limitModalState.featureName && isDailyLimitReached && (
+            <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
+              Tính năng đang gọi: {limitModalState.featureName}
+            </p>
+          )}
+
+          <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed">
+            Tài khoản Google{' '}
+            <strong className="text-[#7d2ae8] dark:text-purple-300 font-mono">
+              {user.email}
+            </strong>{' '}
+            {isDailyLimitReached ? (
+              <>
+                đã sử dụng hết <strong>{dailyLimit}/{dailyLimit} lần</strong> trong ngày{' '}
+                <strong>{todayDateKey}</strong> (tính từ <strong>00h00 đến 23h59</strong>). Khi đã dùng quá giới hạn 5 lần/ngày, bạn không thể sử dụng thêm tính năng cho đến ngày hôm sau.
+              </>
+            ) : (
+              <>
+                được sử dụng tối đa <strong>{dailyLimit} lần/ngày</strong> (tính từ{' '}
+                <strong>00h00 đến 23h59</strong>). Hiện tại bạn đã dùng{' '}
+                <strong>
+                  {dailyUsed}/{dailyLimit} lần
+                </strong>
+                .
+              </>
+            )}
+          </p>
+        </div>
+
+        {/* Visual 5-Slot Progress */}
+        <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-900/90 border border-neutral-200 dark:border-neutral-800 space-y-2.5">
+          <div className="flex items-center justify-between text-xs font-bold">
+            <span className="text-neutral-600 dark:text-neutral-400">
+              Khung giờ tính: 00h00 – 23h59 ({todayDateKey})
+            </span>
+            <span
+              className={
+                isDailyLimitReached
+                  ? 'text-rose-600 dark:text-rose-400 font-black'
+                  : 'text-emerald-600 dark:text-emerald-400 font-black'
+              }
+            >
+              Đã dùng {dailyUsed}/{dailyLimit} lượt
+            </span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 5].map(slot => {
+              const used = slot <= dailyUsed;
+              return (
+                <div
+                  key={slot}
+                  className={`h-2.5 rounded-full transition-all ${
+                    used
+                      ? isDailyLimitReached
+                        ? 'bg-gradient-to-r from-rose-500 to-amber-500'
+                        : 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc]'
+                      : 'bg-neutral-200 dark:bg-neutral-800'
+                  }`}
+                />
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            🔄 Hạn mức sẽ tự động reset về <strong>0/5 lượt</strong> vào đúng{' '}
+            <strong>00h00 ngày mai</strong>.
+          </p>
+        </div>
+
+        {/* Contact Admin Box */}
+        <div className="p-3.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/60 text-left space-y-2">
+          <div className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+            Cần cấp thêm lượt sử dụng trong ngày? Liên hệ Admin:
+          </div>
+          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+            <span className="font-mono font-bold text-xs text-[#7d2ae8] dark:text-purple-300">
+              lenhatduy.vietnam@gmail.com
+            </span>
+            <button
+              type="button"
+              onClick={handleCopyAdminEmail}
+              className="canva-btn-primary px-3 py-1 rounded-lg text-[11px] font-bold"
+            >
+              {copied ? '✓ Đã chép' : 'Sao chép'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={closeLimitModal}
+            className="canva-btn-primary w-full py-3 rounded-xl text-xs font-black shadow-md canva-tap"
+          >
+            Đã Hiểu Thông Báo Giới Hạn (00h00 – 23h59)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MainApp() {
-  const { user, systemConfig, isLoaded, isSuperAdmin, hasTabAccess } = useAuth();
+  const {
+    user,
+    systemConfig,
+    isLoaded,
+    isSuperAdmin,
+    hasTabAccess,
+    dailyLimit,
+    dailyUsed,
+    dailyRemaining,
+    isDailyLimitReached,
+    todayDateKey,
+    openLimitModal,
+  } = useAuth();
+  const toast = useToast();
   const [activeTab, setActiveTabState] = useState<TopWorkspaceTab>('exam-tools');
-  const [examSubTab, setExamSubTab] = useState<'ai-audit' | 'standardize' | 'mix'>('ai-audit');
+  const [examSubTab, setExamSubTabState] = useState<'ai-audit' | 'standardize' | 'mix'>('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
 
@@ -127,12 +312,42 @@ function MainApp() {
 
   const answeredCount = questions.filter(q => !!q.correctAnswer).length;
 
+  const setExamSubTab = (sub: 'ai-audit' | 'standardize' | 'mix') => {
+    setExamSubTabState(sub);
+    if (isDailyLimitReached) {
+      const label =
+        sub === 'ai-audit'
+          ? 'AI Kiểm Định & Soát Lỗi Đề Thi'
+          : sub === 'standardize'
+          ? 'Chuẩn Hóa Đề Thi 1 Chạm'
+          : 'Trộn Mã Đề 25%';
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng hôm nay!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal(label);
+    }
+  };
+
   const setActiveTab = (tab: TopWorkspaceTab) => {
     if (tab === 'ai-audit' || tab === 'standardize' || tab === 'mix') {
       setActiveTabState('exam-tools');
       setExamSubTab(tab);
     } else {
       setActiveTabState(tab);
+      if (isDailyLimitReached && tab !== 'guide' && tab !== 'admin') {
+        const label =
+          tab === 'exam-tools'
+            ? 'Tools Soạn Đề'
+            : tab === 'thesis-auditor'
+            ? 'Kiểm Duyệt Đề Án & Giáo Trình Word'
+            : 'Cắt & Tách Trang PDF';
+        toast.error(
+          'Đã hết limit 5/5 lần sử dụng hôm nay!',
+          'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+        );
+        openLimitModal(label);
+      }
     }
   };
 
@@ -353,7 +568,82 @@ function MainApp() {
       </section>
 
       {/* Main Workspace Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20 space-y-5">
+        {/* Daily Usage Quota Bar (5 uses/day: 00h00 - 23h59) for Logged-in Google Users */}
+        {!isSuperAdmin && user && (
+          <div
+            className={`p-3.5 sm:p-4 rounded-2xl border-2 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              isDailyLimitReached
+                ? 'border-rose-500/80 bg-gradient-to-r from-rose-50 via-amber-50/60 to-rose-50 dark:from-rose-950/50 dark:via-amber-950/30 dark:to-rose-950/50 shadow-md'
+                : 'border-purple-200/80 dark:border-purple-900/50 bg-white dark:bg-[#151823] shadow-2xs'
+            }`}
+          >
+            <div className="flex items-start sm:items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-xs ${
+                  isDailyLimitReached
+                    ? 'bg-gradient-to-br from-rose-500 to-amber-500 animate-pulse'
+                    : 'bg-gradient-to-br from-[#7d2ae8] to-[#00c4cc]'
+                }`}
+              >
+                {isDailyLimitReached ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <Zap className="w-5 h-5" />
+                )}
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white">
+                    {isDailyLimitReached
+                      ? `🚫 Đã hết hạn mức sử dụng trong ngày (${dailyUsed}/${dailyLimit} lần)!`
+                      : `Hạn mức sử dụng miễn phí hôm nay: Đã dùng ${dailyUsed}/${dailyLimit} lần (Còn ${dailyRemaining} lần)`}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">
+                    00h00 – 23h59 • {todayDateKey}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                  {isDailyLimitReached
+                    ? 'Bạn đã sử dụng đủ 5/5 lần trong ngày (tính từ 00h00 đến 23h59). Không thể sử dụng thêm tính năng hôm nay; hạn mức sẽ tự động mở lại vào 00h00 ngày mai.'
+                    : 'Mỗi tài khoản Google đăng nhập được sử dụng các tính năng trên web 5 lần/ngày (tính từ 00h00 đến 23h59).'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map(slot => {
+                  const used = slot <= dailyUsed;
+                  return (
+                    <span
+                      key={slot}
+                      className={`w-5 h-2 rounded-full transition-all ${
+                        used
+                          ? isDailyLimitReached
+                            ? 'bg-rose-500'
+                            : 'bg-[#7d2ae8]'
+                          : 'bg-neutral-200 dark:bg-neutral-800'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => openLimitModal('Chi tiết hạn mức 5 lần/ngày')}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition canva-tap ${
+                  isDailyLimitReached
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                    : 'bg-purple-100 dark:bg-purple-950/70 text-[#7d2ae8] dark:text-purple-300 hover:bg-purple-200'
+                }`}
+              >
+                {isDailyLimitReached ? 'Xem Thông Báo Hết Limit' : 'Chi Tiết'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div key={activeTab} className="tab-enter">
           {/* TAB 1: TOOLS SOẠN ĐỀ (GỘP PHÂN HỆ 1, 2, 3) */}
           {activeTab === 'exam-tools' && (
@@ -495,6 +785,9 @@ function MainApp() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
+
+      {/* Daily Limit Notification Modal (5 uses/day: 00h00 - 23h59) */}
+      <DailyLimitModal />
 
       {/* SaaS Clean Footer */}
       <footer className="w-full border-t border-neutral-200/80 dark:border-neutral-800/80 bg-white/80 dark:bg-[#11131a]/80 backdrop-blur-md py-5 px-4 sm:px-6 transition-colors mt-auto">

@@ -4,6 +4,7 @@ import {
   readUnifiedStore,
   upsertAdminPermission,
   recordTeacherLogin,
+  recordUserDailyUsage,
   deleteTeacherFromStore,
   SUPER_ADMIN_EMAIL,
 } from '@/lib/server-store';
@@ -37,11 +38,37 @@ export async function POST(req: Request) {
   try {
     const rawBody = await req.json();
     const body = sanitizeInput(rawBody);
-    const { action, user, email, displayName, photoURL, permissions } = body;
+    const { action, user, email, displayName, photoURL, permissions, dateKey, count } = body;
 
     const targetEmail = ((user?.email || email) as string)?.trim().toLowerCase();
     if (!targetEmail) {
       return NextResponse.json({ success: false, error: 'Email là bắt buộc' }, { status: 400 });
+    }
+
+    if (action === 'consume_quota' || action === 'reset_quota') {
+      const { state, user: updatedUser } = await recordUserDailyUsage({
+        email: targetEmail,
+        dateKey: typeof dateKey === 'string' ? dateKey : undefined,
+        count: typeof count === 'number' ? count : undefined,
+        reset: action === 'reset_quota',
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          rev: state.rev,
+          user: updatedUser,
+          count: state.users.length,
+          users: state.users,
+          permissions: state.permissions,
+          deletedEmails: state.deletedEmails,
+        },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+          },
+        }
+      );
     }
 
     if (action === 'login' || (user && permissions === undefined)) {

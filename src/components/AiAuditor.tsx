@@ -59,7 +59,14 @@ export function AiAuditor({
   onGoToStandardize,
   onGoToMixer,
 }: AiAuditorProps) {
-  const { user, systemConfig, isSuperAdmin } = useAuth();
+  const {
+    user,
+    systemConfig,
+    isSuperAdmin,
+    isDailyLimitReached,
+    consumeDailyQuota,
+    openLimitModal,
+  } = useAuth();
   const toast = useToast();
 
   const [isAuditing, setIsAuditing] = useState(false);
@@ -114,6 +121,15 @@ export function AiAuditor({
   const availableKeysCount = getAvailableKeys(effectiveApiKey).length;
 
   const processDocxFile = async (file: File) => {
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Tải & Phân Tích Đề Thi Word');
+      return;
+    }
+
     setIsUploading(true);
     toast.showLoading(
       'Đang Phân Tích Cấu Trúc Đề Thi...',
@@ -195,6 +211,15 @@ export function AiAuditor({
   };
 
   const handleLoadSample = () => {
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Nạp Đề Thi Mẫu');
+      return;
+    }
+
     setQuestions(SAMPLE_QUESTIONS);
     setExamMetadata(SAMPLE_METADATA);
     setUploadedFileName('De_Mau_Chuan_AzTool.docx');
@@ -226,6 +251,14 @@ export function AiAuditor({
           'Hệ thống AI đang cập nhật khóa kết nối, vui lòng thử lại sau.'
         );
       }
+      return;
+    }
+
+    if (!consumeDailyQuota('AI Kiểm Định & Soát Lỗi Đề Thi')) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
       return;
     }
 

@@ -29,7 +29,7 @@ interface ExamMixerProps {
 }
 
 export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerProps) {
-  const { user, incrementUsage } = useAuth();
+  const { user, incrementUsage, consumeDailyQuota } = useAuth();
   const toast = useToast();
 
   const [numExams, setNumExams] = useState(4);
@@ -45,6 +45,14 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
       toast.warning(
         'Chưa có câu hỏi để trộn!',
         'Hãy quay lại Bước 1 để tải đề thi lên hoặc nạp đề mẫu.'
+      );
+      return;
+    }
+
+    if (!consumeDailyQuota('Trộn Mã Đề Trắc Nghiệm 25%')) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
       );
       return;
     }

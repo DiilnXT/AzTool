@@ -46,7 +46,7 @@ export function ExamStandardizer({
   onGoToMixer,
   onGoToAiAudit,
 }: ExamStandardizerProps) {
-  const { user, incrementUsage } = useAuth();
+  const { user, incrementUsage, isDailyLimitReached, consumeDailyQuota, openLimitModal } = useAuth();
   const toast = useToast();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -59,6 +59,15 @@ export function ExamStandardizer({
   const [customTemplateName, setCustomTemplateName] = useState<string>('MAU_DE_THI_tracnghiem.docx (Chuẩn Gốc 100%)');
 
   const processDocxFile = async (file: File) => {
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Chuẩn Hóa Đề Thi 1 Chạm');
+      return;
+    }
+
     setIsProcessing(true);
     toast.showLoading(
       'Đang bóc tách đề thi Word...',
@@ -153,6 +162,15 @@ export function ExamStandardizer({
 
   // Load sample exam
   const handleLoadSample = () => {
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Nạp Đề Thi Mẫu');
+      return;
+    }
+
     setQuestions(SAMPLE_QUESTIONS);
     setExamMetadata(SAMPLE_METADATA);
     setUploadMessage('Đã tải đề thi mẫu chuẩn 10 câu AzTool!');
@@ -163,6 +181,15 @@ export function ExamStandardizer({
   // Parse raw text
   const handleParseRawText = () => {
     if (!rawTextInput.trim()) return;
+    if (isDailyLimitReached) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
+      openLimitModal('Chuyển Văn Bản Đề Thi Thô');
+      return;
+    }
+
     try {
       const parsed = parsePlainTextExam(rawTextInput);
       if (parsed.questions.length === 0) {
@@ -195,6 +222,14 @@ export function ExamStandardizer({
   const handleDownloadDocx = async (hasAnswers: boolean) => {
     if (questions.length === 0) {
       toast.warning('Chưa có câu hỏi nào!', 'Vui lòng tải đề lên hoặc nhấn "Thử Đề Mẫu".');
+      return;
+    }
+
+    if (!consumeDailyQuota('Chuẩn Hóa & Xuất Đề Thi Word')) {
+      toast.error(
+        'Đã hết limit 5/5 lần sử dụng trong ngày!',
+        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+      );
       return;
     }
 

@@ -61,6 +61,9 @@ export function AdminDashboard() {
     systemConfig,
     isSuperAdmin,
     permissionsMap,
+    dailyLimit,
+    getUserDailyUsed,
+    resetUserDailyQuota,
     updateUserPermissions,
     saveBulkPermissions,
     grantAllPermissions,
@@ -1246,6 +1249,9 @@ export function AdminDashboard() {
                       (perms.canPdfStudio ? 1 : 0) +
                       (perms.canThesisAudit ? 1 : 0);
 
+                    const userDailyUsed = isSuper ? 0 : getUserDailyUsed(normEmail);
+                    const isUserAtDailyLimit = !isSuper && userDailyUsed >= dailyLimit;
+
                     return (
                       <tr
                         key={normEmail}
@@ -1280,6 +1286,35 @@ export function AdminDashboard() {
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300">
                                     Đang khóa hết
                                   </span>
+                                )}
+                                {!isSuper && (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                      isUserAtDailyLimit
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-purple-100 dark:bg-purple-950/80 text-[#7d2ae8] dark:text-purple-300'
+                                    }`}
+                                  >
+                                    {isUserAtDailyLimit
+                                      ? `Hết limit: ${userDailyUsed}/${dailyLimit} lượt`
+                                      : `Hôm nay: ${userDailyUsed}/${dailyLimit} lượt`}
+                                  </span>
+                                )}
+                                {!isSuper && userDailyUsed > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      await resetUserDailyQuota(normEmail);
+                                      toast.success(
+                                        `Đã reset hạn mức hôm nay về 0/${dailyLimit}!`,
+                                        `Tài khoản ${normEmail} đã có lại đủ 5 lượt sử dụng hôm nay.`
+                                      );
+                                    }}
+                                    className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 transition"
+                                    title="Đặt lại lượt sử dụng hôm nay về 0/5"
+                                  >
+                                    Reset 0/5
+                                  </button>
                                 )}
                                 {isUnsaved && (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
