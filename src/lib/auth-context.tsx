@@ -4,11 +4,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { UserProfile, TabPermissions, UserActivityLog } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 import { getProtectedGoogleClientId, initClientSecurityShield } from '@/lib/security-shield';
-import {
-  createPkceSession,
-  consumePkceSession,
-  buildGooglePkceAuthorizeUrl,
-} from '@/lib/oauth-pkce';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
 export const DAILY_USAGE_LIMIT = 5;
@@ -1641,203 +1636,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshUsers();
   };
 
-  /**
-   * Secure OAuth 2.0 Authorization Code + PKCE (`response_type=code` + `S256`) Flow:
-   * - Replaces legacy Implicit flow (`response_type=token` / `initTokenClient`) so raw
-   *   `access_token` is NEVER returned to the browser.
-   * - Generates a cryptographic PKCE `code_verifier`, SHA-256 `code_challenge` (`S256`), and CSRF `state`.
-   * - Exchanges `code` + `code_verifier` on the server via `POST /api/auth/google` (which sets an `HttpOnly` cookie).
-   */
-  const exchangeOAuthCodeWithServer = useCallback(
-    async (params: {
-      code?: string;
-      codeVerifier?: string;
-      redirectUri?: string;
-      idToken?: string;
-    }): Promise<boolean> => {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify(params),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(
-          errData?.error || 'Xác thực OAuth 2.0 (Code + PKCE) không thành công.'
-        );
-      }
-      const data = await res.json();
-      if (!data?.success || !data?.profile?.email) {
-        throw new Error('Không nhận được thông tin hồ sơ từ máy chủ xác thực.');
-      }
-      await loginWithGoogle(
-        data.profile.email,
-        data.profile.name,
-        data.profile.picture
-      );
-      return true;
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allUsers, permissionsMap]
-  );
-
-  // Handle OAuth 2.0 `response_type=code` + PKCE redirect callback (`?oauth_code=...&oauth_state=...`) on mount
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const url = new URL(window.location.href);
-      const oauthCode = url.searchParams.get('oauth_code');
-      const oauthState = url.searchParams.get('oauth_state');
-      const oauthError = url.searchParams.get('oauth_error');
-      if (!oauthCode && !oauthError) return;
-
-      url.searchParams.delete('oauth_code');
-      url.searchParams.delete('oauth_state');
-      url.searchParams.delete('oauth_error');
-      window.history.replaceState({}, document.title, url.pathname + url.search);
-
-      if (oauthError || !oauthCode) return;
-
-      const pkceSession = consumePkceSession(oauthState);
-      if (!pkceSession) return;
-
-      void exchangeOAuthCodeWithServer({
-        code: oauthCode,
-        codeVerifier: pkceSession.codeVerifier,
-        redirectUri: pkceSession.redirectUri,
-      }).catch(err => {
-        console.warn('OAuth PKCE callback exchange error:', err);
-      });
-    } catch {
-      // ignore
-    }
-  }, [exchangeOAuthCodeWithServer]);
-
   const loginWithRealGoogleOAuth = async (): Promise<boolean> => {
     const activeClientId = getProtectedGoogleClientId();
 
-    if (!activeClientId || typeof window === 'undefined') {
+    if (!activeClientId) {
       return false;
     }
 
-    const callbackRedirectUri = `${window.location.origin}/api/auth/google`;
-    const pkce = await createPkceSession(callbackRedirectUri);
-
-    // 1. Primary: Google OAuth 2.0 Authorization Code + PKCE (`response_type=code`, `code_challenge_method=S256`)
-    if (window.google?.accounts?.oauth2?.initCodeClient) {
-      return new Promise<boolean>((resolve, reject) => {
-        try {
-          const codeClient = window.google.accounts.oauth2.initCodeClient({
-            client_id: activeClientId,
-            scope: 'openid email profile',
-            ux_mode: 'popup',
-            state: pkce.state,
-            code_challenge: pkce.codeChallenge,
-            code_challenge_method: 'S256',
-            callback: async (codeResponse: any) => {
-              if (codeResponse?.error) {
-                reject(new Error(`Google OAuth (Code + PKCE): ${codeResponse.error}`));
-                return;
-              }
-              if (!codeResponse?.code) {
-                reject(new Error('Không nhận được Authorization Code từ Google.'));
-                return;
-              }
-
-              const verifiedSession =
-                consumePkceSession(codeResponse.state || pkce.state) || pkce;
-
-              try {
-                const ok = await exchangeOAuthCodeWithServer({
-                  code: codeResponse.code,
-                  codeVerifier: verifiedSession.codeVerifier,
-                  redirectUri: 'postmessage',
-                });
-                resolve(ok);
-              } catch (exchangeErr: any) {
-                reject(exchangeErr);
-              }
-            },
-          });
-
-          codeClient.requestCode();
-        } catch (err: any) {
-          reject(err);
-        }
-      });
+    if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
+      throw new Error(
+        'Dịch vụ đăng nhập Google đang khởi tạo. Vui lòng thử lại sau 2 giây.'
+      );
     }
 
-    // 2. Standard RFC 7636 OAuth 2.0 Authorization Code + PKCE (`response_type=code` + `S256`) Popup Flow
     return new Promise<boolean>((resolve, reject) => {
-      const authorizeUrl = buildGooglePkceAuthorizeUrl({
-        clientId: activeClientId,
-        redirectUri: pkce.redirectUri,
-        codeChallenge: pkce.codeChallenge,
-        state: pkce.state,
-      });
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: activeClientId,
+          scope: 'openid email profile',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              reject(new Error(`Google OAuth: ${tokenResponse.error}`));
+              return;
+            }
+            if (!tokenResponse?.access_token) {
+              reject(new Error('Không nhận được xác thực từ Google.'));
+              return;
+            }
 
-      const width = 520;
-      const height = 640;
-      const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
-      const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
-      const popup = window.open(
-        authorizeUrl,
-        'aztool_google_oauth_pkce',
-        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-      );
+            try {
+              const userInfoRes = await fetch(
+                'https://www.googleapis.com/oauth2/v3/userinfo',
+                {
+                  headers: {
+                    Authorization: `Bearer ${tokenResponse.access_token}`,
+                  },
+                }
+              );
 
-      if (!popup) {
-        reject(new Error('Trình duyệt đã chặn cửa sổ đăng nhập OAuth 2.0 PKCE.'));
-        return;
+              if (!userInfoRes.ok) {
+                throw new Error('Không thể tải thông tin tài khoản Google.');
+              }
+
+              const profile = await userInfoRes.json();
+              await loginWithGoogle(
+                profile.email,
+                profile.name || profile.given_name,
+                profile.picture
+              );
+              resolve(true);
+            } catch (fetchErr: any) {
+              reject(fetchErr);
+            }
+          },
+        });
+
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+      } catch (err: any) {
+        reject(err);
       }
-
-      let settled = false;
-      const cleanup = () => {
-        window.removeEventListener('message', onMessage);
-        window.clearInterval(closeTimer);
-      };
-
-      const onMessage = async (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        const payload = event.data;
-        if (!payload || payload.type !== 'AZTOOL_OAUTH_PKCE_CALLBACK') return;
-
-        settled = true;
-        cleanup();
-
-        if (payload.error || !payload.code) {
-          reject(new Error(payload.error || 'Đăng nhập OAuth 2.0 PKCE bị hủy.'));
-          return;
-        }
-
-        const session = consumePkceSession(payload.state);
-        if (!session) {
-          reject(new Error('Phiên PKCE state không khớp hoặc đã hết hạn.'));
-          return;
-        }
-
-        try {
-          const ok = await exchangeOAuthCodeWithServer({
-            code: payload.code,
-            codeVerifier: session.codeVerifier,
-            redirectUri: session.redirectUri,
-          });
-          resolve(ok);
-        } catch (err: any) {
-          reject(err);
-        }
-      };
-
-      window.addEventListener('message', onMessage);
-
-      const closeTimer = window.setInterval(() => {
-        if (popup.closed && !settled) {
-          settled = true;
-          cleanup();
-          reject(new Error('Cửa sổ đăng nhập Google đã đóng.'));
-        }
-      }, 600);
     });
   };
 
@@ -1846,7 +1703,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     localStorage.removeItem(STORAGE_USER_KEY);
     localStorage.removeItem('deq_current_user');
-    void fetch('/api/auth/google', { method: 'DELETE' }).catch(() => null);
   };
 
   const updateDisplayName = (newName: string) => {
