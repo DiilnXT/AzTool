@@ -57,6 +57,7 @@ export function ExamStandardizer({
   const [rawTextInput, setRawTextInput] = useState('');
   const [showAnswerSheetPreview, setShowAnswerSheetPreview] = useState(true);
   const [customTemplateName, setCustomTemplateName] = useState<string>('MAU_DE_THI_tracnghiem.docx (Chuẩn Gốc 100%)');
+  const [hasConsumedForCurrentFile, setHasConsumedForCurrentFile] = useState(false);
 
   const processDocxFile = async (file: File) => {
     if (isDailyLimitReached) {
@@ -64,7 +65,7 @@ export function ExamStandardizer({
         'Đã hết limit 5/5 lần sử dụng trong ngày!',
         'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
       );
-      openLimitModal('Chuẩn Hóa Đề Thi 1 Chạm');
+      openLimitModal('Chuẩn Hóa File Đề Thi');
       return;
     }
 
@@ -82,6 +83,19 @@ export function ExamStandardizer({
           'Hãy kiểm tra cú pháp "Câu 1: ...", "A. ...".'
         );
       } else {
+        if (
+          !consumeDailyQuota('Chuẩn Hóa File Đề Thi Word', {
+            type: 'standardize',
+            fileName: file.name,
+          })
+        ) {
+          toast.error(
+            'Đã hết limit 5/5 lần sử dụng trong ngày!',
+            'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+          );
+          return;
+        }
+        setHasConsumedForCurrentFile(true);
         setQuestions(parsed.questions);
         setExamMetadata(prev => ({
           ...prev,
@@ -90,7 +104,7 @@ export function ExamStandardizer({
         const detectedCount = parsed.questions.filter(q => !!q.correctAnswer).length;
         const msg = `Đã nạp ${parsed.questions.length} câu hỏi (${detectedCount}/${parsed.questions.length} câu có đáp án)!`;
         setUploadMessage(msg);
-        toast.success('Chuẩn hóa dữ liệu thành công!', msg);
+        toast.success('Chuẩn hóa dữ liệu thành công! (-1 lượt hôm nay)', msg);
         confetti({ particleCount: 45, spread: 55, origin: { y: 0.6 } });
 
         void captureWorkspaceSnapshot({
@@ -171,6 +185,7 @@ export function ExamStandardizer({
       return;
     }
 
+    setHasConsumedForCurrentFile(false);
     setQuestions(SAMPLE_QUESTIONS);
     setExamMetadata(SAMPLE_METADATA);
     setUploadMessage('Đã tải đề thi mẫu chuẩn 10 câu AzTool!');
@@ -196,11 +211,24 @@ export function ExamStandardizer({
         toast.warning('Không trích xuất được câu hỏi', 'Hãy kiểm tra định dạng Câu 1:, A., B., C., D.');
         return;
       }
+      if (
+        !consumeDailyQuota('Chuẩn Hóa Văn Bản Đề Thi', {
+          type: 'standardize',
+          fileName: `VanBanTho_${parsed.questions.length}cau.docx`,
+        })
+      ) {
+        toast.error(
+          'Đã hết limit 5/5 lần sử dụng trong ngày!',
+          'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+        );
+        return;
+      }
+      setHasConsumedForCurrentFile(true);
       setQuestions(parsed.questions);
       setExamMetadata(prev => ({ ...prev, ...parsed.metadata }));
       setUploadMessage(`Đã chuyển đổi thành công ${parsed.questions.length} câu hỏi!`);
       setActiveTabMode('upload');
-      toast.success(`Đã bóc tách ${parsed.questions.length} câu hỏi!`);
+      toast.success(`Đã bóc tách ${parsed.questions.length} câu hỏi! (-1 lượt hôm nay)`);
       confetti({ particleCount: 40, spread: 50 });
 
       void captureWorkspaceSnapshot({
@@ -225,12 +253,20 @@ export function ExamStandardizer({
       return;
     }
 
-    if (!consumeDailyQuota('Chuẩn Hóa & Xuất Đề Thi Word')) {
-      toast.error(
-        'Đã hết limit 5/5 lần sử dụng trong ngày!',
-        'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
-      );
-      return;
+    if (!hasConsumedForCurrentFile) {
+      if (
+        !consumeDailyQuota('Chuẩn Hóa & Xuất Đề Thi Word', {
+          type: 'standardize',
+          fileName: `AzTool_ChuanHoa_${questions.length}cau.docx`,
+        })
+      ) {
+        toast.error(
+          'Đã hết limit 5/5 lần sử dụng trong ngày!',
+          'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+        );
+        return;
+      }
+      setHasConsumedForCurrentFile(true);
     }
 
     setIsExporting(true);

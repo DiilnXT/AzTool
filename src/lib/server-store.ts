@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { UserProfile, TabPermissions } from '@/types/exam';
+import { UserProfile, TabPermissions, UserActivityLog } from '@/types/exam';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
 export const DAILY_USAGE_LIMIT = 5;
@@ -67,9 +67,11 @@ export function normalizePermissions(
 
   // If this was an auto-created default record before the 5/day Google login update (not explicitly locked by Admin),
   // enable all features by default so the Google user can use their 5 free uses/day!
-  if (allFalse && !raw.adminConfigured) {
+  if (allFalse && !raw.adminConfigured && !raw.isBlocked) {
     return {
       ...DEFAULT_USER_PERMS,
+      isBlocked: Boolean(raw.isBlocked),
+      unlimitedDailyQuota: Boolean(raw.unlimitedDailyQuota),
       updatedAt:
         typeof raw.updatedAt === 'number' && raw.updatedAt > 0
           ? raw.updatedAt
@@ -84,6 +86,8 @@ export function normalizePermissions(
     canPdfStudio: Boolean(raw.canPdfStudio),
     canThesisAudit: Boolean(raw.canThesisAudit),
     adminConfigured: Boolean(raw.adminConfigured),
+    isBlocked: Boolean(raw.isBlocked),
+    unlimitedDailyQuota: Boolean(raw.unlimitedDailyQuota),
     updatedAt:
       typeof raw.updatedAt === 'number' && raw.updatedAt > 0
         ? raw.updatedAt
@@ -241,6 +245,17 @@ function mergeIntoState(target: UnifiedStoreState, incoming: Partial<UnifiedStor
         }
       }
 
+      // Merge recentActivities (dedup by id, newest first, max 25)
+      const actMap = new Map<string, UserActivityLog>();
+      for (const act of [...(u.recentActivities || []), ...(prevUser?.recentActivities || [])]) {
+        if (act?.id && !actMap.has(act.id)) {
+          actMap.set(act.id, act);
+        }
+      }
+      const mergedActivities = Array.from(actMap.values())
+        .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+        .slice(0, 25);
+
       userMap.set(norm, {
         ...(prevUser || u),
         ...u,
@@ -249,9 +264,16 @@ function mergeIntoState(target: UnifiedStoreState, incoming: Partial<UnifiedStor
         photoURL: u.photoURL || prevUser?.photoURL,
         role: isSuper ? 'super_admin' : u.role || prevUser?.role || 'free',
         permissions: bestPerm,
+        isBlocked: isSuper ? false : Boolean(bestPerm.isBlocked ?? u.isBlocked ?? prevUser?.isBlocked),
+        unlimitedDailyQuota: isSuper
+          ? true
+          : Boolean(bestPerm.unlimitedDailyQuota ?? u.unlimitedDailyQuota ?? prevUser?.unlimitedDailyQuota),
+        examsGeneratedCount: Math.max(u.examsGeneratedCount || 0, prevUser?.examsGeneratedCount || 0),
+        mixCount: Math.max(u.mixCount || 0, prevUser?.mixCount || 0),
         dailyUsageDate: mergedUsageDate,
         dailyUsageCount: mergedUsageCount,
         dailyUsageUpdatedAt: mergedUsageTs,
+        recentActivities: mergedActivities,
       });
     }
   }
@@ -568,8 +590,16 @@ export async function recordTeacherLogin(params: {
 
   state.permissions[norm] = authoritativePerm;
 
+  const loginActivity: UserActivityLog = {
+    id: `act-login-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+    type: 'login',
+    label: 'Đăng nhập hệ thống bằng Google',
+  };
+
   let finalUser: UserProfile;
   if (existingUserIdx >= 0) {
+    const prevActs = state.users[existingUserIdx].recentActivities || [];
     finalUser = {
       ...state.users[existingUserIdx],
       email: norm,
@@ -577,7 +607,12 @@ export async function recordTeacherLogin(params: {
       photoURL: params.photoURL || state.users[existingUserIdx].photoURL,
       role: isSuper ? 'super_admin' : state.users[existingUserIdx].role,
       permissions: authoritativePerm,
+      isBlocked: isSuper ? false : Boolean(authoritativePerm.isBlocked ?? state.users[existingUserIdx].isBlocked),
+      unlimitedDailyQuota: isSuper
+        ? true
+        : Boolean(authoritativePerm.unlimitedDailyQuota ?? state.users[existingUserIdx].unlimitedDailyQuota),
       lastActive: new Date().toISOString(),
+      recentActivities: [loginActivity, ...prevActs].slice(0, 25),
     };
     state.users[existingUserIdx] = finalUser;
   } else {
@@ -588,10 +623,13 @@ export async function recordTeacherLogin(params: {
       photoURL: params.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
       role: isSuper ? 'super_admin' : 'free',
       permissions: authoritativePerm,
+      isBlocked: false,
+      unlimitedDailyQuota: isSuper,
       createdAt: new Date().toISOString().split('T')[0],
       lastActive: new Date().toISOString(),
       examsGeneratedCount: 0,
       mixCount: 0,
+      recentActivities: [loginActivity],
     };
     state.users.push(finalUser);
   }
@@ -637,6 +675,9 @@ export async function recordUserDailyUsage(params: {
   dateKey?: string;
   count?: number;
   reset?: boolean;
+  activityType?: UserActivityLog['type'];
+  activityLabel?: string;
+  fileName?: string;
 }): Promise<{ state: UnifiedStoreState; user?: UserProfile }> {
   const state = await readUnifiedStore(true);
   const norm = params.email.trim().toLowerCase();
@@ -659,18 +700,54 @@ export async function recordUserDailyUsage(params: {
       ? Math.max(currentCountForToday, params.count)
       : currentCountForToday + 1;
 
+    const newAct: UserActivityLog | null =
+      !params.reset && params.activityLabel
+        ? {
+            id: `act-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: new Date().toISOString(),
+            type: params.activityType || 'standardize',
+            label: params.activityLabel,
+            fileName: params.fileName,
+            dailySlot: `${nextCount}/${DAILY_USAGE_LIMIT}`,
+          }
+        : null;
+
     targetUser = {
       ...prev,
       email: norm,
+      examsGeneratedCount:
+        params.activityType === 'standardize'
+          ? (prev.examsGeneratedCount || 0) + 1
+          : prev.examsGeneratedCount || 0,
+      mixCount:
+        params.activityType === 'mix'
+          ? (prev.mixCount || 0) + 1
+          : prev.mixCount || 0,
       dailyUsageDate: todayKey,
       dailyUsageCount: isSuper ? 0 : nextCount,
       dailyUsageUpdatedAt: nowTs,
       lastActive: new Date().toISOString(),
+      recentActivities: newAct
+        ? [newAct, ...(prev.recentActivities || [])].slice(0, 25)
+        : prev.recentActivities || [],
     };
     state.users[idx] = targetUser;
   } else {
     const perm = state.permissions[norm] || { ...DEFAULT_USER_PERMS, updatedAt: nowTs };
     state.permissions[norm] = perm;
+    const initialCount = isSuper ? 0 : params.reset ? 0 : params.count ?? 1;
+    const newAct: UserActivityLog | null =
+      !params.reset && params.activityLabel
+        ? {
+            id: `act-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: new Date().toISOString(),
+            type: params.activityType || 'standardize',
+            label: params.activityLabel,
+            fileName: params.fileName,
+            dailySlot: `${initialCount}/${DAILY_USAGE_LIMIT}`,
+          }
+        : null;
+
     targetUser = {
       id: isSuper ? 'admin-001' : `user-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
       email: norm,
@@ -680,11 +757,12 @@ export async function recordUserDailyUsage(params: {
       permissions: perm,
       createdAt: todayKey,
       lastActive: new Date().toISOString(),
-      examsGeneratedCount: 0,
-      mixCount: 0,
+      examsGeneratedCount: params.activityType === 'standardize' ? 1 : 0,
+      mixCount: params.activityType === 'mix' ? 1 : 0,
       dailyUsageDate: todayKey,
-      dailyUsageCount: isSuper ? 0 : params.reset ? 0 : params.count ?? 1,
+      dailyUsageCount: initialCount,
       dailyUsageUpdatedAt: nowTs,
+      recentActivities: newAct ? [newAct] : [],
     };
     state.users.push(targetUser);
   }

@@ -78,7 +78,18 @@ export interface TabPermissions {
   canPdfStudio?: boolean;
   canThesisAudit?: boolean;
   adminConfigured?: boolean;
+  isBlocked?: boolean;
+  unlimitedDailyQuota?: boolean;
   updatedAt?: number;
+}
+
+export interface UserActivityLog {
+  id: string;
+  timestamp: string;
+  type: 'login' | 'standardize' | 'mix' | 'ai-audit' | 'thesis-audit' | 'pdf-studio' | 'other';
+  label: string;
+  fileName?: string;
+  dailySlot?: string;
 }
 
 export interface UserProfile {
@@ -88,6 +99,8 @@ export interface UserProfile {
   photoURL?: string;
   role: 'super_admin' | 'admin' | 'pro' | 'free';
   permissions?: TabPermissions;
+  isBlocked?: boolean;
+  unlimitedDailyQuota?: boolean;
   customApiKey?: string;
   customModelId?: string;
   createdAt: string;
@@ -97,4 +110,5 @@ export interface UserProfile {
   dailyUsageDate?: string;
   dailyUsageCount?: number;
   dailyUsageUpdatedAt?: number;
+  recentActivities?: UserActivityLog[];
 }

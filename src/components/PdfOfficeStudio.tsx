@@ -134,7 +134,12 @@ export function PdfOfficeStudio() {
       return;
     }
 
-    if (!consumeDailyQuota('Cắt & Tách Trang PDF')) {
+    if (
+      !consumeDailyQuota('Cắt & Tách Trang PDF', {
+        type: 'pdf-studio',
+        fileName: selectedFile.name,
+      })
+    ) {
       toast.error(
         'Đã hết limit 5/5 lần sử dụng trong ngày!',
         'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'

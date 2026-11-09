@@ -144,6 +144,18 @@ export function AiAuditor({
           'Hãy kiểm tra định dạng "Câu 1: ..." và các phương án "A. ...", "B. ...".'
         );
       } else {
+        if (
+          !consumeDailyQuota('Chuẩn Hóa & Phân Tích Đề Thi Word', {
+            type: 'standardize',
+            fileName: file.name,
+          })
+        ) {
+          toast.error(
+            'Đã hết limit 5/5 lần sử dụng trong ngày!',
+            'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
+          );
+          return;
+        }
         setQuestions(parsed.questions);
         setUploadedFileName(file.name);
         setErrors([]);
@@ -254,7 +266,12 @@ export function AiAuditor({
       return;
     }
 
-    if (!consumeDailyQuota('AI Kiểm Định & Soát Lỗi Đề Thi')) {
+    if (
+      !consumeDailyQuota('AI Kiểm Định & Soát Lỗi Đề Thi', {
+        type: 'ai-audit',
+        fileName: uploadedFileName || 'DeThi.docx',
+      })
+    ) {
       toast.error(
         'Đã hết limit 5/5 lần sử dụng trong ngày!',
         'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'

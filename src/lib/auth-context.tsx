@@ -1,9 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { UserProfile, TabPermissions } from '@/types/exam';
+import { UserProfile, TabPermissions, UserActivityLog } from '@/types/exam';
 import { DEFAULT_MODEL_ID } from '@/lib/gemini';
 import { getProtectedGoogleClientId, initClientSecurityShield } from '@/lib/security-shield';
+import {
+  createPkceSession,
+  consumePkceSession,
+  buildGooglePkceAuthorizeUrl,
+} from '@/lib/oauth-pkce';
 
 export const SUPER_ADMIN_EMAIL = 'lenhatduy.vietnam@gmail.com';
 export const DAILY_USAGE_LIMIT = 5;
@@ -64,6 +69,8 @@ export const defaultUserPermissions: TabPermissions = {
   canMix: true,
   canPdfStudio: true,
   canThesisAudit: true,
+  isBlocked: false,
+  unlimitedDailyQuota: false,
   adminConfigured: false,
   updatedAt: 0,
 };
@@ -74,6 +81,8 @@ export const superAdminPermissions: TabPermissions = {
   canMix: true,
   canPdfStudio: true,
   canThesisAudit: true,
+  isBlocked: false,
+  unlimitedDailyQuota: true,
   adminConfigured: true,
   updatedAt: 9999999999999,
 };
@@ -94,9 +103,11 @@ export function normalizeClientPermissions(
     !raw.canPdfStudio &&
     !raw.canThesisAudit;
 
-  if (allFalse && !raw.adminConfigured) {
+  if (allFalse && !raw.adminConfigured && !raw.isBlocked) {
     return {
       ...defaultUserPermissions,
+      isBlocked: Boolean(raw.isBlocked),
+      unlimitedDailyQuota: Boolean(raw.unlimitedDailyQuota),
       updatedAt:
         typeof raw.updatedAt === 'number' && raw.updatedAt > 0
           ? raw.updatedAt
@@ -110,6 +121,8 @@ export function normalizeClientPermissions(
     canMix: Boolean(raw.canMix),
     canPdfStudio: Boolean(raw.canPdfStudio),
     canThesisAudit: Boolean(raw.canThesisAudit),
+    isBlocked: Boolean(raw.isBlocked),
+    unlimitedDailyQuota: Boolean(raw.unlimitedDailyQuota),
     adminConfigured: Boolean(raw.adminConfigured),
     updatedAt:
       typeof raw.updatedAt === 'number' && raw.updatedAt > 0
@@ -312,13 +325,20 @@ interface AuthContextType {
   dailyUsed: number;
   dailyRemaining: number;
   isDailyLimitReached: boolean;
+  isAccountBlocked: boolean;
+  isUnlimitedQuota: boolean;
   todayDateKey: string;
   limitModalState: { isOpen: boolean; featureName?: string } | null;
   openLimitModal: (featureName?: string) => void;
   closeLimitModal: () => void;
-  consumeDailyQuota: (featureName?: string) => boolean;
+  consumeDailyQuota: (
+    featureName?: string,
+    meta?: { type?: UserActivityLog['type']; fileName?: string }
+  ) => boolean;
   resetUserDailyQuota: (email: string) => Promise<void>;
   getUserDailyUsed: (email: string) => number;
+  toggleBlockUser: (email: string, blocked?: boolean) => Promise<void>;
+  toggleUnlimitedQuota: (email: string, unlimited?: boolean) => Promise<void>;
   updateUserPermissions: (
     email: string,
     perms: TabPermissions,
@@ -532,12 +552,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
+            // Merge recentActivities (dedup by id, newest first, up to 25)
+            const actMap = new Map<string, UserActivityLog>();
+            for (const act of [...(su.recentActivities || []), ...(prevU?.recentActivities || [])]) {
+              if (act?.id && !actMap.has(act.id)) {
+                actMap.set(act.id, act);
+              }
+            }
+            const mergedActivities = Array.from(actMap.values())
+              .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+              .slice(0, 25);
+
             serverUsersMap.set(norm, {
               ...(prevU || {}),
               ...su,
               email: norm,
               displayName: su.displayName || prevU?.displayName || norm.split('@')[0],
               permissions: bestPerm,
+              isBlocked: isSuper ? false : Boolean(bestPerm.isBlocked ?? su.isBlocked ?? prevU?.isBlocked),
+              unlimitedDailyQuota: isSuper
+                ? true
+                : Boolean(bestPerm.unlimitedDailyQuota ?? su.unlimitedDailyQuota ?? prevU?.unlimitedDailyQuota),
+              examsGeneratedCount: Math.max(
+                prevU?.examsGeneratedCount || 0,
+                su.examsGeneratedCount || 0
+              ),
+              mixCount: Math.max(prevU?.mixCount || 0, su.mixCount || 0),
+              recentActivities: mergedActivities,
               dailyUsageDate: mergedUsageDate,
               dailyUsageCount: mergedUsageCount,
               dailyUsageUpdatedAt: mergedUsageTs,
@@ -830,15 +871,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           Boolean(prevPerm.canMix) !== Boolean(latestPermForCurrent.canMix) ||
           Boolean(prevPerm.canPdfStudio) !== Boolean(latestPermForCurrent.canPdfStudio) ||
           Boolean(prevPerm.canThesisAudit) !== Boolean(latestPermForCurrent.canThesisAudit) ||
+          Boolean(prevPerm.isBlocked) !== Boolean(latestPermForCurrent.isBlocked) ||
+          Boolean(prevPerm.unlimitedDailyQuota) !== Boolean(latestPermForCurrent.unlimitedDailyQuota) ||
           currentLoggedUser.dailyUsageDate !== latestDailyDate ||
           (currentLoggedUser.dailyUsageCount || 0) !== latestDailyCount;
 
         if (hasChanged) {
+          const matchedServerUser = userMap.get(normCurrent);
           const updatedSelf: UserProfile = {
             ...currentLoggedUser,
             email: normCurrent,
             role: isSuper ? 'super_admin' : currentLoggedUser.role,
             permissions: latestPermForCurrent,
+            isBlocked: isSuper ? false : Boolean(latestPermForCurrent.isBlocked),
+            unlimitedDailyQuota: isSuper ? true : Boolean(latestPermForCurrent.unlimitedDailyQuota),
+            examsGeneratedCount: Math.max(
+              currentLoggedUser.examsGeneratedCount || 0,
+              matchedServerUser?.examsGeneratedCount || 0
+            ),
+            mixCount: Math.max(
+              currentLoggedUser.mixCount || 0,
+              matchedServerUser?.mixCount || 0
+            ),
+            recentActivities:
+              matchedServerUser?.recentActivities?.length
+                ? matchedServerUser.recentActivities
+                : currentLoggedUser.recentActivities,
             dailyUsageDate: latestDailyDate,
             dailyUsageCount: latestDailyCount,
             dailyUsageUpdatedAt: currentDaily?.updatedAt || currentLoggedUser.dailyUsageUpdatedAt,
@@ -1053,6 +1111,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.email && user.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
   );
 
+  const isAccountBlocked = Boolean(
+    user &&
+      !isSuperAdmin &&
+      (user.isBlocked ||
+        user.permissions?.isBlocked ||
+        permissionsMap[user.email.trim().toLowerCase()]?.isBlocked)
+  );
+
+  const isUnlimitedQuota = Boolean(
+    isSuperAdmin ||
+      user?.unlimitedDailyQuota ||
+      user?.permissions?.unlimitedDailyQuota ||
+      (user?.email &&
+        permissionsMap[user.email.trim().toLowerCase()]?.unlimitedDailyQuota)
+  );
+
   const hasTabAccess = (
     tab: 'ai-audit' | 'standardize' | 'mix' | 'exam-tools' | 'thesis-auditor' | 'pdf-studio'
   ): boolean => {
@@ -1060,6 +1134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isSuperAdmin) return true;
     const norm = user.email.trim().toLowerCase();
     const perms = permissionsMap[norm] || user.permissions || defaultUserPermissions;
+    if (perms.isBlocked || user.isBlocked) return false;
     if (tab === 'ai-audit') return Boolean(perms.canAudit);
     if (tab === 'standardize') return Boolean(perms.canStandardize);
     if (tab === 'mix') return Boolean(perms.canMix);
@@ -1093,6 +1168,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           canMix: Boolean(perms.canMix),
           canPdfStudio: Boolean(perms.canPdfStudio),
           canThesisAudit: Boolean(perms.canThesisAudit),
+          isBlocked: Boolean(perms.isBlocked),
+          unlimitedDailyQuota: Boolean(perms.unlimitedDailyQuota),
           adminConfigured: true,
           updatedAt: nowTs,
         };
@@ -1147,6 +1224,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: norm,
         displayName: displayName?.trim() || existingUser.displayName,
         permissions: cleanPerms,
+        isBlocked: cleanPerms.isBlocked,
+        unlimitedDailyQuota: cleanPerms.unlimitedDailyQuota,
         lastActive: new Date().toISOString(),
       });
     } else {
@@ -1157,6 +1236,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
         role: isSuper ? 'super_admin' : 'free',
         permissions: cleanPerms,
+        isBlocked: cleanPerms.isBlocked,
+        unlimitedDailyQuota: cleanPerms.unlimitedDailyQuota,
         createdAt: new Date().toISOString().split('T')[0],
         lastActive: new Date().toISOString(),
         examsGeneratedCount: 0,
@@ -1170,7 +1251,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 3. Update current user if matching
     if (user && user.email.trim().toLowerCase() === norm) {
-      const updatedSelf = { ...user, email: norm, permissions: cleanPerms };
+      const updatedSelf = {
+        ...user,
+        email: norm,
+        permissions: cleanPerms,
+        isBlocked: cleanPerms.isBlocked,
+        unlimitedDailyQuota: cleanPerms.unlimitedDailyQuota,
+      };
       userRef.current = updatedSelf;
       setUser(updatedSelf);
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(updatedSelf));
@@ -1238,6 +1325,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             canMix: Boolean(p.canMix),
             canPdfStudio: Boolean(p.canPdfStudio),
             canThesisAudit: Boolean(p.canThesisAudit),
+            isBlocked: Boolean(p.isBlocked),
+            unlimitedDailyQuota: Boolean(p.unlimitedDailyQuota),
             adminConfigured: true,
             updatedAt: nowTs,
           };
@@ -1272,10 +1361,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     for (const u of allUsers) {
       if (!u?.email) continue;
       const uNorm = u.email.trim().toLowerCase();
+      const pRef = cleanedPerms[uNorm] || u.permissions;
       dedupUsersMap.set(uNorm, {
         ...u,
         email: uNorm,
-        permissions: cleanedPerms[uNorm] || u.permissions,
+        permissions: pRef,
+        isBlocked: Boolean(pRef?.isBlocked),
+        unlimitedDailyQuota: Boolean(pRef?.unlimitedDailyQuota),
       });
     }
 
@@ -1283,12 +1375,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
       const existing = dedupUsersMap.get(norm);
       const customName = displayNames?.[norm]?.trim();
+      const pRef = cleanedPerms[norm];
       if (existing) {
         dedupUsersMap.set(norm, {
           ...existing,
           email: norm,
           displayName: customName || existing.displayName,
-          permissions: cleanedPerms[norm],
+          permissions: pRef,
+          isBlocked: Boolean(pRef?.isBlocked),
+          unlimitedDailyQuota: Boolean(pRef?.unlimitedDailyQuota),
           lastActive: new Date().toISOString(),
         });
       } else {
@@ -1298,7 +1393,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           displayName: customName || norm.split('@')[0],
           photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${norm}`,
           role: isSuper ? 'super_admin' : 'free',
-          permissions: cleanedPerms[norm],
+          permissions: pRef,
+          isBlocked: Boolean(pRef?.isBlocked),
+          unlimitedDailyQuota: Boolean(pRef?.unlimitedDailyQuota),
           createdAt: new Date().toISOString().split('T')[0],
           lastActive: new Date().toISOString(),
           examsGeneratedCount: 0,
@@ -1313,10 +1410,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (user && cleanedPerms[user.email.trim().toLowerCase()]) {
       const normSelf = user.email.trim().toLowerCase();
+      const pRef = cleanedPerms[normSelf];
       const updatedSelf = {
         ...user,
         email: normSelf,
-        permissions: cleanedPerms[normSelf],
+        permissions: pRef,
+        isBlocked: Boolean(pRef?.isBlocked),
+        unlimitedDailyQuota: Boolean(pRef?.unlimitedDailyQuota),
       };
       userRef.current = updatedSelf;
       setUser(updatedSelf);
@@ -1346,6 +1446,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const grantAllPermissions = async (email: string, displayName?: string) => {
+    const norm = email.trim().toLowerCase();
+    const existingPerm = permissionsMap[norm];
     await updateUserPermissions(
       email,
       {
@@ -1354,6 +1456,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canMix: true,
         canPdfStudio: true,
         canThesisAudit: true,
+        isBlocked: false,
+        unlimitedDailyQuota: Boolean(existingPerm?.unlimitedDailyQuota),
         updatedAt: Date.now(),
       },
       displayName
@@ -1361,14 +1465,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const revokeAllPermissions = async (email: string) => {
+    const norm = email.trim().toLowerCase();
+    const existingPerm = permissionsMap[norm];
     await updateUserPermissions(email, {
       canAudit: false,
       canStandardize: false,
       canMix: false,
       canPdfStudio: false,
       canThesisAudit: false,
+      isBlocked: Boolean(existingPerm?.isBlocked),
+      unlimitedDailyQuota: Boolean(existingPerm?.unlimitedDailyQuota),
       updatedAt: Date.now(),
     });
+  };
+
+  const toggleBlockUser = async (email: string, blocked?: boolean) => {
+    const norm = email.trim().toLowerCase();
+    if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) return;
+    const uFound = allUsers.find(u => u.email.trim().toLowerCase() === norm);
+    const currentPerms =
+      permissionsMap[norm] || uFound?.permissions || defaultUserPermissions;
+    const nextBlocked =
+      typeof blocked === 'boolean' ? blocked : !Boolean(currentPerms.isBlocked);
+    await updateUserPermissions(
+      norm,
+      {
+        ...currentPerms,
+        isBlocked: nextBlocked,
+        updatedAt: Date.now(),
+      },
+      uFound?.displayName
+    );
+  };
+
+  const toggleUnlimitedQuota = async (email: string, unlimited?: boolean) => {
+    const norm = email.trim().toLowerCase();
+    if (!norm || norm === SUPER_ADMIN_EMAIL.toLowerCase()) return;
+    const uFound = allUsers.find(u => u.email.trim().toLowerCase() === norm);
+    const currentPerms =
+      permissionsMap[norm] || uFound?.permissions || defaultUserPermissions;
+    const nextUnlimited =
+      typeof unlimited === 'boolean'
+        ? unlimited
+        : !Boolean(currentPerms.unlimitedDailyQuota);
+    await updateUserPermissions(
+      norm,
+      {
+        ...currentPerms,
+        unlimitedDailyQuota: nextUnlimited,
+        updatedAt: Date.now(),
+      },
+      uFound?.displayName
+    );
   };
 
   const loginWithGoogle = async (
@@ -1455,6 +1603,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           customAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${lowerEmail}`,
         role: isSuper ? 'super_admin' : 'free',
         permissions: resolvedPerms,
+        isBlocked: Boolean(resolvedPerms.isBlocked),
+        unlimitedDailyQuota: Boolean(resolvedPerms.unlimitedDailyQuota),
         createdAt: new Date().toISOString().split('T')[0],
         lastActive: new Date().toISOString(),
         examsGeneratedCount: 0,
@@ -1472,6 +1622,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? 'free'
           : existing.role,
         permissions: resolvedPerms,
+        isBlocked: Boolean(resolvedPerms.isBlocked),
+        unlimitedDailyQuota: Boolean(resolvedPerms.unlimitedDailyQuota),
         displayName: customName || existing.displayName,
         photoURL: customAvatar || existing.photoURL,
         lastActive: new Date().toISOString(),
@@ -1489,65 +1641,203 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshUsers();
   };
 
+  /**
+   * Secure OAuth 2.0 Authorization Code + PKCE (`response_type=code` + `S256`) Flow:
+   * - Replaces legacy Implicit flow (`response_type=token` / `initTokenClient`) so raw
+   *   `access_token` is NEVER returned to the browser.
+   * - Generates a cryptographic PKCE `code_verifier`, SHA-256 `code_challenge` (`S256`), and CSRF `state`.
+   * - Exchanges `code` + `code_verifier` on the server via `POST /api/auth/google` (which sets an `HttpOnly` cookie).
+   */
+  const exchangeOAuthCodeWithServer = useCallback(
+    async (params: {
+      code?: string;
+      codeVerifier?: string;
+      redirectUri?: string;
+      idToken?: string;
+    }): Promise<boolean> => {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify(params),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(
+          errData?.error || 'Xác thực OAuth 2.0 (Code + PKCE) không thành công.'
+        );
+      }
+      const data = await res.json();
+      if (!data?.success || !data?.profile?.email) {
+        throw new Error('Không nhận được thông tin hồ sơ từ máy chủ xác thực.');
+      }
+      await loginWithGoogle(
+        data.profile.email,
+        data.profile.name,
+        data.profile.picture
+      );
+      return true;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allUsers, permissionsMap]
+  );
+
+  // Handle OAuth 2.0 `response_type=code` + PKCE redirect callback (`?oauth_code=...&oauth_state=...`) on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      const oauthCode = url.searchParams.get('oauth_code');
+      const oauthState = url.searchParams.get('oauth_state');
+      const oauthError = url.searchParams.get('oauth_error');
+      if (!oauthCode && !oauthError) return;
+
+      url.searchParams.delete('oauth_code');
+      url.searchParams.delete('oauth_state');
+      url.searchParams.delete('oauth_error');
+      window.history.replaceState({}, document.title, url.pathname + url.search);
+
+      if (oauthError || !oauthCode) return;
+
+      const pkceSession = consumePkceSession(oauthState);
+      if (!pkceSession) return;
+
+      void exchangeOAuthCodeWithServer({
+        code: oauthCode,
+        codeVerifier: pkceSession.codeVerifier,
+        redirectUri: pkceSession.redirectUri,
+      }).catch(err => {
+        console.warn('OAuth PKCE callback exchange error:', err);
+      });
+    } catch {
+      // ignore
+    }
+  }, [exchangeOAuthCodeWithServer]);
+
   const loginWithRealGoogleOAuth = async (): Promise<boolean> => {
     const activeClientId = getProtectedGoogleClientId();
 
-    if (!activeClientId) {
+    if (!activeClientId || typeof window === 'undefined') {
       return false;
     }
 
-    if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
-      throw new Error(
-        'Dịch vụ đăng nhập Google đang khởi tạo. Vui lòng thử lại sau 2 giây.'
-      );
-    }
+    const callbackRedirectUri = `${window.location.origin}/api/auth/google`;
+    const pkce = await createPkceSession(callbackRedirectUri);
 
-    return new Promise<boolean>((resolve, reject) => {
-      try {
-        const tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: activeClientId,
-          scope: 'openid email profile',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.error) {
-              reject(new Error(`Google OAuth: ${tokenResponse.error}`));
-              return;
-            }
-            if (!tokenResponse?.access_token) {
-              reject(new Error('Không nhận được xác thực từ Google.'));
-              return;
-            }
-
-            try {
-              const userInfoRes = await fetch(
-                'https://www.googleapis.com/oauth2/v3/userinfo',
-                {
-                  headers: {
-                    Authorization: `Bearer ${tokenResponse.access_token}`,
-                  },
-                }
-              );
-
-              if (!userInfoRes.ok) {
-                throw new Error('Không thể tải thông tin tài khoản Google.');
+    // 1. Primary: Google OAuth 2.0 Authorization Code + PKCE (`response_type=code`, `code_challenge_method=S256`)
+    if (window.google?.accounts?.oauth2?.initCodeClient) {
+      return new Promise<boolean>((resolve, reject) => {
+        try {
+          const codeClient = window.google.accounts.oauth2.initCodeClient({
+            client_id: activeClientId,
+            scope: 'openid email profile',
+            ux_mode: 'popup',
+            state: pkce.state,
+            code_challenge: pkce.codeChallenge,
+            code_challenge_method: 'S256',
+            callback: async (codeResponse: any) => {
+              if (codeResponse?.error) {
+                reject(new Error(`Google OAuth (Code + PKCE): ${codeResponse.error}`));
+                return;
+              }
+              if (!codeResponse?.code) {
+                reject(new Error('Không nhận được Authorization Code từ Google.'));
+                return;
               }
 
-              const profile = await userInfoRes.json();
-              await loginWithGoogle(
-                profile.email,
-                profile.name || profile.given_name,
-                profile.picture
-              );
-              resolve(true);
-            } catch (fetchErr: any) {
-              reject(fetchErr);
-            }
-          },
-        });
+              const verifiedSession =
+                consumePkceSession(codeResponse.state || pkce.state) || pkce;
 
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-      } catch (err: any) {
-        reject(err);
+              try {
+                const ok = await exchangeOAuthCodeWithServer({
+                  code: codeResponse.code,
+                  codeVerifier: verifiedSession.codeVerifier,
+                  redirectUri: 'postmessage',
+                });
+                resolve(ok);
+              } catch (exchangeErr: any) {
+                reject(exchangeErr);
+              }
+            },
+          });
+
+          codeClient.requestCode();
+        } catch (err: any) {
+          reject(err);
+        }
+      });
+    }
+
+    // 2. Standard RFC 7636 OAuth 2.0 Authorization Code + PKCE (`response_type=code` + `S256`) Popup Flow
+    return new Promise<boolean>((resolve, reject) => {
+      const authorizeUrl = buildGooglePkceAuthorizeUrl({
+        clientId: activeClientId,
+        redirectUri: pkce.redirectUri,
+        codeChallenge: pkce.codeChallenge,
+        state: pkce.state,
+      });
+
+      const width = 520;
+      const height = 640;
+      const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+      const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+      const popup = window.open(
+        authorizeUrl,
+        'aztool_google_oauth_pkce',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      );
+
+      if (!popup) {
+        reject(new Error('Trình duyệt đã chặn cửa sổ đăng nhập OAuth 2.0 PKCE.'));
+        return;
       }
+
+      let settled = false;
+      const cleanup = () => {
+        window.removeEventListener('message', onMessage);
+        window.clearInterval(closeTimer);
+      };
+
+      const onMessage = async (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        const payload = event.data;
+        if (!payload || payload.type !== 'AZTOOL_OAUTH_PKCE_CALLBACK') return;
+
+        settled = true;
+        cleanup();
+
+        if (payload.error || !payload.code) {
+          reject(new Error(payload.error || 'Đăng nhập OAuth 2.0 PKCE bị hủy.'));
+          return;
+        }
+
+        const session = consumePkceSession(payload.state);
+        if (!session) {
+          reject(new Error('Phiên PKCE state không khớp hoặc đã hết hạn.'));
+          return;
+        }
+
+        try {
+          const ok = await exchangeOAuthCodeWithServer({
+            code: payload.code,
+            codeVerifier: session.codeVerifier,
+            redirectUri: session.redirectUri,
+          });
+          resolve(ok);
+        } catch (err: any) {
+          reject(err);
+        }
+      };
+
+      window.addEventListener('message', onMessage);
+
+      const closeTimer = window.setInterval(() => {
+        if (popup.closed && !settled) {
+          settled = true;
+          cleanup();
+          reject(new Error('Cửa sổ đăng nhập Google đã đóng.'));
+        }
+      }, 600);
     });
   };
 
@@ -1556,6 +1846,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     localStorage.removeItem(STORAGE_USER_KEY);
     localStorage.removeItem('deq_current_user');
+    void fetch('/api/auth/google', { method: 'DELETE' }).catch(() => null);
   };
 
   const updateDisplayName = (newName: string) => {
@@ -1730,11 +2021,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })();
 
   const dailyLimit = DAILY_USAGE_LIMIT;
-  const dailyRemaining = isSuperAdmin
+  const dailyRemaining = isUnlimitedQuota
     ? 999999
     : Math.max(0, DAILY_USAGE_LIMIT - dailyUsed);
   const isDailyLimitReached = Boolean(
-    user && !isSuperAdmin && dailyUsed >= DAILY_USAGE_LIMIT
+    user && !isUnlimitedQuota && dailyUsed >= DAILY_USAGE_LIMIT
   );
 
   const openLimitModal = useCallback((featureName?: string) => {
@@ -1746,12 +2037,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const consumeDailyQuota = useCallback(
-    (featureName?: string): boolean => {
+    (
+      featureName?: string,
+      meta?: { type?: UserActivityLog['type']; fileName?: string }
+    ): boolean => {
       const currentUser = userRef.current;
       if (!currentUser?.email) return false;
       const norm = currentUser.email.trim().toLowerCase();
-      if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) {
-        return true;
+      const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
+
+      // Check if blocked by Admin
+      if (
+        !isSuper &&
+        (currentUser.isBlocked || currentUser.permissions?.isBlocked)
+      ) {
+        setLimitModalState({
+          isOpen: true,
+          featureName: featureName || 'Tài khoản đã bị tạm khóa bởi Quản trị viên',
+        });
+        return false;
       }
 
       const dayKey = getTodayDateKey();
@@ -1763,26 +2067,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser.dailyUsageDate === dayKey ? currentUser.dailyUsageCount || 0 : 0;
       const currentUsed = Math.max(mapCount, selfCount);
 
-      if (currentUsed >= DAILY_USAGE_LIMIT) {
+      const hasUnlimited =
+        isSuper ||
+        Boolean(currentUser.unlimitedDailyQuota) ||
+        Boolean(currentUser.permissions?.unlimitedDailyQuota);
+
+      if (!hasUnlimited && currentUsed >= DAILY_USAGE_LIMIT) {
         setLimitModalState({ isOpen: true, featureName });
         return false;
       }
 
-      const nextCount = currentUsed + 1;
+      const nextCount = isSuper ? 0 : currentUsed + 1;
       const nowTs = Date.now();
-      const nextEntry: DailyUsageEntry = {
-        date: dayKey,
-        count: nextCount,
-        updatedAt: nowTs,
+      const nowIso = new Date().toISOString();
+
+      const activityEntry: UserActivityLog = {
+        id: `act-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+        type: meta?.type || 'other',
+        label: featureName || 'Sử dụng tính năng',
+        fileName: meta?.fileName,
+        timestamp: nowIso,
       };
 
-      const nextMap: Record<string, DailyUsageEntry> = {
-        ...dailyUsageMapRef.current,
-        [norm]: nextEntry,
-      };
-      dailyUsageMapRef.current = nextMap;
-      setDailyUsageMap(nextMap);
-      localStorage.setItem(STORAGE_DAILY_USAGE_KEY, JSON.stringify(nextMap));
+      const nextActivities = [
+        activityEntry,
+        ...(currentUser.recentActivities || []),
+      ].slice(0, 25);
+
+      const nextExamsGenCount =
+        meta?.type === 'standardize'
+          ? (currentUser.examsGeneratedCount || 0) + 1
+          : currentUser.examsGeneratedCount || 0;
+      const nextMixCount =
+        meta?.type === 'mix'
+          ? (currentUser.mixCount || 0) + 1
+          : currentUser.mixCount || 0;
+
+      if (!isSuper) {
+        const nextEntry: DailyUsageEntry = {
+          date: dayKey,
+          count: nextCount,
+          updatedAt: nowTs,
+        };
+        const nextMap: Record<string, DailyUsageEntry> = {
+          ...dailyUsageMapRef.current,
+          [norm]: nextEntry,
+        };
+        dailyUsageMapRef.current = nextMap;
+        setDailyUsageMap(nextMap);
+        localStorage.setItem(STORAGE_DAILY_USAGE_KEY, JSON.stringify(nextMap));
+      }
 
       const updatedSelf: UserProfile = {
         ...currentUser,
@@ -1790,7 +2124,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         dailyUsageDate: dayKey,
         dailyUsageCount: nextCount,
         dailyUsageUpdatedAt: nowTs,
-        lastActive: new Date().toISOString(),
+        examsGeneratedCount: nextExamsGenCount,
+        mixCount: nextMixCount,
+        recentActivities: nextActivities,
+        lastActive: nowIso,
       };
       userRef.current = updatedSelf;
       setUser(updatedSelf);
@@ -1804,7 +2141,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 dailyUsageDate: dayKey,
                 dailyUsageCount: nextCount,
                 dailyUsageUpdatedAt: nowTs,
-                lastActive: updatedSelf.lastActive,
+                examsGeneratedCount: nextExamsGenCount,
+                mixCount: nextMixCount,
+                recentActivities: nextActivities,
+                lastActive: nowIso,
               }
             : u
         );
@@ -1820,6 +2160,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: norm,
           dateKey: dayKey,
           count: nextCount,
+          activityType: meta?.type,
+          activityLabel: featureName,
+          fileName: meta?.fileName,
         }),
       }).catch(() => null);
 
@@ -1930,6 +2273,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         dailyUsed,
         dailyRemaining,
         isDailyLimitReached,
+        isAccountBlocked,
+        isUnlimitedQuota,
         todayDateKey: activeDayKey,
         limitModalState,
         openLimitModal,
@@ -1937,6 +2282,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         consumeDailyQuota,
         resetUserDailyQuota,
         getUserDailyUsed,
+        toggleBlockUser,
+        toggleUnlimitedQuota,
         updateUserPermissions,
         saveBulkPermissions,
         grantAllPermissions,

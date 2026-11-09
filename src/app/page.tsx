@@ -42,7 +42,7 @@ function TabLockedView({
   tabTitle: string;
   onGoToGuide: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, isAccountBlocked } = useAuth();
   const [copied, setCopied] = useState(false);
 
   const handleCopyEmail = () => {
@@ -53,24 +53,47 @@ function TabLockedView({
 
   return (
     <div className="max-w-xl mx-auto py-10 px-4 text-center">
-      <div className="canva-card p-8 sm:p-10 space-y-6 border-2 border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-white to-white dark:from-amber-500/10 dark:via-[#141622] dark:to-[#141622] shadow-xl rounded-3xl">
-        <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-amber-500 to-rose-500 text-white mx-auto flex items-center justify-center shadow-lg shadow-amber-500/25">
+      <div
+        className={`canva-card p-8 sm:p-10 space-y-6 border-2 shadow-xl rounded-3xl ${
+          isAccountBlocked
+            ? 'border-rose-500/50 bg-gradient-to-b from-rose-500/15 via-white to-white dark:from-rose-500/15 dark:via-[#141622] dark:to-[#141622]'
+            : 'border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-white to-white dark:from-amber-500/10 dark:via-[#141622] dark:to-[#141622]'
+        }`}
+      >
+        <div
+          className={`w-16 h-16 rounded-3xl text-white mx-auto flex items-center justify-center shadow-lg ${
+            isAccountBlocked
+              ? 'bg-gradient-to-br from-rose-600 to-red-700 shadow-rose-500/30'
+              : 'bg-gradient-to-br from-amber-500 to-rose-500 shadow-amber-500/25'
+          }`}
+        >
           <Lock className="w-8 h-8" />
         </div>
 
         <div className="space-y-2">
-          <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-            <ShieldAlert className="w-3.5 h-3.5" /> TÍNH NĂNG CẦN CẤP QUYỀN
+          <span
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[11px] font-black border ${
+              isAccountBlocked
+                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />{' '}
+            {isAccountBlocked
+              ? 'TÀI KHOẢN ĐÃ BỊ CHẶN BỞI QUẢN TRỊ VIÊN'
+              : 'TÍNH NĂNG CẦN CẤP QUYỀN'}
           </span>
           <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white pt-1">
-            {tabTitle}
+            {isAccountBlocked ? 'Tài Khoản Của Bạn Đang Bị Tạm Khóa' : tabTitle}
           </h2>
           <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
             Tài khoản Gmail{' '}
             <strong className="text-[#7d2ae8] dark:text-purple-300 font-mono">
               {user?.email}
             </strong>{' '}
-            hiện chưa được Quản trị viên mở khóa phân hệ này.
+            {isAccountBlocked
+              ? 'hiện đã bị Quản trị viên chặn truy cập các tính năng trên hệ thống AzTool. Vui lòng liên hệ Quản trị viên để được kiểm tra và mở khóa.'
+              : 'hiện chưa được Quản trị viên mở khóa phân hệ này.'}
           </p>
         </div>
 

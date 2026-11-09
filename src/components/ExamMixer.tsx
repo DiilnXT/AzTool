@@ -49,7 +49,12 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
       return;
     }
 
-    if (!consumeDailyQuota('Trộn Mã Đề Trắc Nghiệm 25%')) {
+    if (
+      !consumeDailyQuota(`Trộn ${numExams} Mã Đề Trắc Nghiệm`, {
+        type: 'mix',
+        fileName: `BoDeTron_${numExams}MaDe.docx`,
+      })
+    ) {
       toast.error(
         'Đã hết limit 5/5 lần sử dụng trong ngày!',
         'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'
@@ -80,7 +85,6 @@ export function ExamMixer({ examMetadata, questions, onGoToAiAudit }: ExamMixerP
 
         setMixedExams(results);
         setActiveCodeTab(results[0]?.code || '');
-        incrementUsage('mix');
 
         void captureWorkspaceSnapshot({
           userEmail: user?.email || 'khach@aztool.vercel.app',

@@ -407,7 +407,12 @@ export function ThesisDocxAuditor() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleLoadAndAnalyzeFile = async (file: File) => {
-    if (!consumeDailyQuota('Kiểm Duyệt Đề Án & Giáo Trình Word')) {
+    if (
+      !consumeDailyQuota('Kiểm Duyệt Đề Án & Giáo Trình Word', {
+        type: 'thesis-audit',
+        fileName: file.name,
+      })
+    ) {
       toast.error(
         'Đã hết limit 5/5 lần sử dụng trong ngày!',
         'Thời gian tính từ 00h00 đến 23h59. Bạn không thể sử dụng thêm tính năng hôm nay.'

@@ -64,6 +64,8 @@ export function AdminDashboard() {
     dailyLimit,
     getUserDailyUsed,
     resetUserDailyQuota,
+    toggleBlockUser,
+    toggleUnlimitedQuota,
     updateUserPermissions,
     saveBulkPermissions,
     grantAllPermissions,
@@ -90,11 +92,13 @@ export function AdminDashboard() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewItem, setPreviewItem] = useState<WorkspaceSnapshotItem | null>(null);
   const [previewSearch, setPreviewSearch] = useState('');
+  const [inspectingTeacherEmail, setInspectingTeacherEmail] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'files' | 'activities'>('files');
 
   // User permission management state
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [teacherStatusFilter, setTeacherStatusFilter] = useState<
-    'ALL' | 'AUTHORIZED' | 'LOCKED' | 'UNSAVED'
+    'ALL' | 'AUTHORIZED' | 'LOCKED' | 'BLOCKED' | 'LIMIT_REACHED' | 'UNSAVED'
   >('ALL');
   const [draftPermissionsMap, setDraftPermissionsMap] = useState<Record<string, TabPermissions>>({});
   const [unsavedEmails, setUnsavedEmails] = useState<Record<string, boolean>>({});
@@ -168,6 +172,8 @@ export function AdminDashboard() {
       canMix: Boolean(raw?.canMix),
       canPdfStudio: Boolean(raw?.canPdfStudio),
       canThesisAudit: Boolean(raw?.canThesisAudit),
+      isBlocked: Boolean(raw?.isBlocked),
+      unlimitedDailyQuota: Boolean(raw?.unlimitedDailyQuota),
       updatedAt: raw?.updatedAt || 0,
     });
 
@@ -182,6 +188,8 @@ export function AdminDashboard() {
         ...u,
         email: norm,
         permissions: p,
+        isBlocked: Boolean(p.isBlocked ?? u.isBlocked),
+        unlimitedDailyQuota: Boolean(p.unlimitedDailyQuota ?? u.unlimitedDailyQuota),
       });
     }
 
@@ -189,15 +197,18 @@ export function AdminDashboard() {
     for (const [emailKey, perms] of Object.entries(permissionsMap)) {
       const norm = emailKey.trim().toLowerCase();
       if (!map.has(norm)) {
+        const p = toFivePerms(perms);
         map.set(norm, {
           id: `perm-${norm}`,
           email: norm,
           displayName: norm.split('@')[0],
           photoURL: `https://api.dicebear.com/7.x/initials/svg?seed=${norm}`,
           role: norm === SUPER_ADMIN_EMAIL.toLowerCase() ? 'super_admin' : 'free',
-          permissions: toFivePerms(perms),
+          permissions: p,
+          isBlocked: Boolean(p.isBlocked),
+          unlimitedDailyQuota: Boolean(p.unlimitedDailyQuota),
           createdAt: '2026-01-01',
-          lastActive: new Date().toISOString(),
+          lastActive: '2026-11-06T00:00:00.000Z',
           examsGeneratedCount: 0,
           mixCount: 0,
         });
@@ -213,19 +224,36 @@ export function AdminDashboard() {
         if (email !== SUPER_ADMIN_EMAIL.toLowerCase() && delTs > 0 && delTs >= snapTs && !permissionsMap[email]) {
           continue;
         }
+        const p = toFivePerms(permissionsMap[email]);
         map.set(email, {
           id: `discovered-${s.id}`,
           email: email,
           displayName: s.userName || s.userEmail.split('@')[0],
           photoURL: s.userAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${s.userEmail}`,
           role: email === SUPER_ADMIN_EMAIL.toLowerCase() ? 'super_admin' : 'free',
-          permissions: toFivePerms(permissionsMap[email]),
+          permissions: p,
+          isBlocked: Boolean(p.isBlocked),
+          unlimitedDailyQuota: Boolean(p.unlimitedDailyQuota),
           createdAt: s.createdAtIso?.split('T')[0] || '2026-01-01',
-          lastActive: s.createdAtIso || new Date().toISOString(),
+          lastActive: s.createdAtIso || '2026-11-06T00:00:00.000Z',
           examsGeneratedCount: 1,
           mixCount: 0,
         });
       }
+    }
+
+    // Enrich each teacher with snapshot counts & activity logs
+    for (const [norm, uObj] of Array.from(map.entries())) {
+      const userSnaps = snapshots.filter(s => s.userEmail.trim().toLowerCase() === norm);
+      const snapStdCount = userSnaps.filter(
+        s => s.actionType === 'standardize' || s.actionType === 'upload'
+      ).length;
+      const snapMixCount = userSnaps.filter(s => s.actionType === 'mix').length;
+      map.set(norm, {
+        ...uObj,
+        examsGeneratedCount: Math.max(uObj.examsGeneratedCount || 0, snapStdCount),
+        mixCount: Math.max(uObj.mixCount || 0, snapMixCount),
+      });
     }
 
     return Array.from(map.values()).sort((a, b) => {
@@ -259,6 +287,8 @@ export function AdminDashboard() {
         canMix: true,
         canPdfStudio: true,
         canThesisAudit: true,
+        isBlocked: false,
+        unlimitedDailyQuota: true,
         updatedAt: 9999999999999,
       };
     }
@@ -269,6 +299,8 @@ export function AdminDashboard() {
       canMix: Boolean(raw?.canMix),
       canPdfStudio: Boolean(raw?.canPdfStudio),
       canThesisAudit: Boolean(raw?.canThesisAudit),
+      isBlocked: Boolean(raw?.isBlocked),
+      unlimitedDailyQuota: Boolean(raw?.unlimitedDailyQuota),
       updatedAt: raw?.updatedAt || 0,
     };
   };
@@ -624,7 +656,23 @@ export function AdminDashboard() {
     const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
     if (isSuper) return true;
     const p = getEffectiveTeacherPerms(norm, u.permissions);
+    if (p.isBlocked) return false;
     return p.canAudit || p.canStandardize || p.canMix || p.canPdfStudio || p.canThesisAudit;
+  }).length;
+
+  const blockedCount = combinedTeachers.filter(u => {
+    const norm = u.email.toLowerCase();
+    if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return false;
+    const p = getEffectiveTeacherPerms(norm, u.permissions);
+    return Boolean(p.isBlocked || u.isBlocked);
+  }).length;
+
+  const limitReachedCount = combinedTeachers.filter(u => {
+    const norm = u.email.toLowerCase();
+    if (norm === SUPER_ADMIN_EMAIL.toLowerCase()) return false;
+    const p = getEffectiveTeacherPerms(norm, u.permissions);
+    if (p.unlimitedDailyQuota || u.unlimitedDailyQuota) return false;
+    return getUserDailyUsed(norm) >= dailyLimit;
   }).length;
 
   const lockedCount = Math.max(0, combinedTeachers.length - authorizedCount);
@@ -635,11 +683,20 @@ export function AdminDashboard() {
     const norm = u.email.toLowerCase();
     const isSuper = norm === SUPER_ADMIN_EMAIL.toLowerCase();
     const p = getEffectiveTeacherPerms(norm, u.permissions);
+    const isBlocked = !isSuper && Boolean(p.isBlocked || u.isBlocked);
     const hasAnyPerm =
-      isSuper || p.canAudit || p.canStandardize || p.canMix || p.canPdfStudio || p.canThesisAudit;
+      !isBlocked &&
+      (isSuper || p.canAudit || p.canStandardize || p.canMix || p.canPdfStudio || p.canThesisAudit);
+    const isAtLimit =
+      !isSuper &&
+      !p.unlimitedDailyQuota &&
+      !u.unlimitedDailyQuota &&
+      getUserDailyUsed(norm) >= dailyLimit;
 
     if (teacherStatusFilter === 'AUTHORIZED' && !hasAnyPerm) return false;
     if (teacherStatusFilter === 'LOCKED' && hasAnyPerm) return false;
+    if (teacherStatusFilter === 'BLOCKED' && !isBlocked) return false;
+    if (teacherStatusFilter === 'LIMIT_REACHED' && !isAtLimit) return false;
     if (teacherStatusFilter === 'UNSAVED' && !unsavedEmails[norm]) return false;
 
     if (!userSearchQuery.trim()) return true;
@@ -1162,6 +1219,28 @@ export function AdminDashboard() {
                 >
                   Đang khóa ({lockedCount})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherStatusFilter('BLOCKED')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                    teacherStatusFilter === 'BLOCKED'
+                      ? 'bg-red-700 text-white shadow-xs'
+                      : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100'
+                  }`}
+                >
+                  Đã chặn ({blockedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherStatusFilter('LIMIT_REACHED')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                    teacherStatusFilter === 'LIMIT_REACHED'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
+                  }`}
+                >
+                  Hết limit 5/5 ({limitReachedCount})
+                </button>
                 {unsavedCount > 0 && (
                   <button
                     type="button"
@@ -1194,7 +1273,7 @@ export function AdminDashboard() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 font-extrabold bg-neutral-100/90 dark:bg-neutral-900/90">
-                    <th className="py-3.5 px-4 min-w-[240px]">Giáo Viên / Tài Khoản Gmail</th>
+                    <th className="py-3.5 px-4 min-w-[270px]">Giáo Viên / Dữ Liệu &amp; Hạn Mức Ngày</th>
                     <th className="py-3.5 px-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
                         <Sparkles className="w-3.5 h-3.5" />
@@ -1225,7 +1304,7 @@ export function AdminDashboard() {
                         <span>5. Đề Án Word</span>
                       </div>
                     </th>
-                    <th className="py-3.5 px-4 text-right min-w-[270px]">Lưu &amp; Thao Tác Nhanh</th>
+                    <th className="py-3.5 px-4 text-right min-w-[320px]">Theo Dõi, Chặn &amp; Lưu Quyền</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200/70 dark:divide-neutral-800">
@@ -1233,6 +1312,9 @@ export function AdminDashboard() {
                     const normEmail = u.email.toLowerCase();
                     const isSuper = normEmail === SUPER_ADMIN_EMAIL.toLowerCase();
                     const perms = getEffectiveTeacherPerms(normEmail, u.permissions);
+                    const isRowBlocked = !isSuper && Boolean(perms.isBlocked || u.isBlocked);
+                    const isRowUnlimited =
+                      isSuper || Boolean(perms.unlimitedDailyQuota || u.unlimitedDailyQuota);
                     const isUnsaved = Boolean(unsavedEmails[normEmail]);
                     const isSavingRow = savingEmail === normEmail;
                     const wasRecentlySaved =
@@ -1250,33 +1332,40 @@ export function AdminDashboard() {
                       (perms.canThesisAudit ? 1 : 0);
 
                     const userDailyUsed = isSuper ? 0 : getUserDailyUsed(normEmail);
-                    const isUserAtDailyLimit = !isSuper && userDailyUsed >= dailyLimit;
+                    const isUserAtDailyLimit =
+                      !isSuper && !isRowUnlimited && userDailyUsed >= dailyLimit;
 
                     return (
                       <tr
                         key={normEmail}
                         className={`transition ${
-                          isUnsaved
+                          isRowBlocked
+                            ? 'bg-red-50/70 dark:bg-red-950/25 hover:bg-red-50 dark:hover:bg-red-950/35'
+                            : isUnsaved
                             ? 'bg-amber-50/70 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30'
                             : 'hover:bg-purple-50/40 dark:hover:bg-neutral-800/40'
                         }`}
                       >
                         <td className="py-4 px-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3">
                             <img
                               src={
                                 u.photoURL ||
                                 `https://api.dicebear.com/7.x/initials/svg?seed=${u.email}`
                               }
                               alt=""
-                              className="w-10 h-10 rounded-2xl border border-neutral-200 dark:border-neutral-700 shrink-0 shadow-2xs"
+                              className="w-10 h-10 rounded-2xl border border-neutral-200 dark:border-neutral-700 shrink-0 shadow-2xs mt-0.5"
                             />
-                            <div>
-                              <div className="font-black text-xs sm:text-sm text-neutral-900 dark:text-white flex flex-wrap items-center gap-2">
+                            <div className="space-y-1">
+                              <div className="font-black text-xs sm:text-sm text-neutral-900 dark:text-white flex flex-wrap items-center gap-1.5">
                                 <span>{u.displayName}</span>
                                 {isSuper ? (
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">
                                     ADMIN TỐI THƯỢNG
+                                  </span>
+                                ) : isRowBlocked ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white">
+                                    🚫 ĐÃ CHẶN TÀI KHOẢN
                                   </span>
                                 ) : activeTabsCount > 0 ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
@@ -1290,12 +1379,16 @@ export function AdminDashboard() {
                                 {!isSuper && (
                                   <span
                                     className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                      isUserAtDailyLimit
+                                      isRowUnlimited
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+                                        : isUserAtDailyLimit
                                         ? 'bg-rose-600 text-white'
                                         : 'bg-purple-100 dark:bg-purple-950/80 text-[#7d2ae8] dark:text-purple-300'
                                     }`}
                                   >
-                                    {isUserAtDailyLimit
+                                    {isRowUnlimited
+                                      ? `VIP Không Giới Hạn (Hôm nay: ${userDailyUsed})`
+                                      : isUserAtDailyLimit
                                       ? `Hết limit: ${userDailyUsed}/${dailyLimit} lượt`
                                       : `Hôm nay: ${userDailyUsed}/${dailyLimit} lượt`}
                                   </span>
@@ -1316,6 +1409,28 @@ export function AdminDashboard() {
                                     Reset 0/5
                                   </button>
                                 )}
+                                {!isSuper && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      await toggleUnlimitedQuota(normEmail, !isRowUnlimited);
+                                      toast.success(
+                                        !isRowUnlimited
+                                          ? 'Đã bật VIP Không Giới Hạn Lượt Ngày (∞)!'
+                                          : 'Đã chuyển về giới hạn 5 lượt/ngày (00h–23h59)!',
+                                        normEmail
+                                      );
+                                    }}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-black transition ${
+                                      isRowUnlimited
+                                        ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                        : 'bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300'
+                                    }`}
+                                    title="Bật/tắt chế độ Không giới hạn lượt sử dụng trong ngày"
+                                  >
+                                    {isRowUnlimited ? '★ Đang VIP ∞' : '+ Cấp VIP ∞'}
+                                  </button>
+                                )}
                                 {isUnsaved && (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
                                     Vừa sửa • Bấm Lưu
@@ -1328,11 +1443,21 @@ export function AdminDashboard() {
                                   </span>
                                 )}
                               </div>
-                              <div className="font-mono text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                              <div className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
                                 {u.email}
                               </div>
-                              <div className="text-[11px] text-neutral-400 mt-0.5">
-                                Đã đẩy lên <strong>{userSavedCount}</strong> đề trong Kho Đề Thi
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                                <span>
+                                  Chuẩn hóa: <strong className="text-emerald-600 dark:text-emerald-400">{u.examsGeneratedCount || 0}</strong> lượt
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  Trộn đề: <strong className="text-[#7d2ae8] dark:text-purple-400">{u.mixCount || 0}</strong> lượt
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  Kho đề: <strong className="text-amber-600 dark:text-amber-400">{userSavedCount}</strong> file
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1506,8 +1631,60 @@ export function AdminDashboard() {
 
                         {/* Col 6: Save Button + Quick Actions */}
                         <td className="py-4 px-4 text-right">
-                          {!isSuper && (
+                          {isSuper ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInspectingTeacherEmail(normEmail);
+                                setInspectorTab('files');
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 font-black text-[11px] transition canva-tap inline-flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Xem Dữ Liệu</span>
+                            </button>
+                          ) : (
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setInspectingTeacherEmail(normEmail);
+                                  setInspectorTab('files');
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-black text-[11px] transition canva-tap inline-flex items-center gap-1 shadow-xs"
+                                title="Theo dõi chi tiết dữ liệu đề thi, lịch sử chuẩn hóa, trộn đề & tương tác của tài khoản này"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Theo Dõi ({userSavedCount})</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await toggleBlockUser(normEmail, !isRowBlocked);
+                                  toast.warning(
+                                    !isRowBlocked
+                                      ? `🚫 Đã CHẶN tài khoản ${normEmail}!`
+                                      : `✓ Đã BỎ CHẶN tài khoản ${normEmail}!`,
+                                    !isRowBlocked
+                                      ? 'Giáo viên này sẽ bị chặn truy cập các tính năng trên web ngay lập tức.'
+                                      : 'Giáo viên đã có thể sử dụng lại các phân hệ được mở.'
+                                  );
+                                }}
+                                className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition canva-tap ${
+                                  isRowBlocked
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                    : 'bg-red-100 hover:bg-red-200 dark:bg-red-950/70 text-red-700 dark:text-red-300'
+                                }`}
+                                title={
+                                  isRowBlocked
+                                    ? 'Bỏ chặn tài khoản này'
+                                    : 'Chặn tài khoản này sử dụng web'
+                                }
+                              >
+                                {isRowBlocked ? 'Bỏ Chặn' : 'Chặn'}
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => void handleSaveTeacherPerms(u.email, u.displayName)}
@@ -2149,6 +2326,349 @@ export function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ===================================================================== */}
+      {/* TEACHER ACCOUNT MONITORING, INTERACTION, PERMISSION & BLOCK MODAL     */}
+      {/* ===================================================================== */}
+      {inspectingTeacherEmail && (() => {
+        const targetNorm = inspectingTeacherEmail.toLowerCase();
+        const teacherProfile = combinedTeachers.find(
+          u => u.email.toLowerCase() === targetNorm
+        );
+        if (!teacherProfile) return null;
+
+        const isTargetSuper = targetNorm === SUPER_ADMIN_EMAIL.toLowerCase();
+        const tPerms = getEffectiveTeacherPerms(targetNorm, teacherProfile.permissions);
+        const isTargetBlocked =
+          !isTargetSuper && Boolean(tPerms.isBlocked || teacherProfile.isBlocked);
+        const isTargetUnlimited =
+          isTargetSuper ||
+          Boolean(tPerms.unlimitedDailyQuota || teacherProfile.unlimitedDailyQuota);
+        const targetDailyUsed = isTargetSuper ? 0 : getUserDailyUsed(targetNorm);
+        const teacherFiles = snapshots.filter(
+          s => s.userEmail.toLowerCase() === targetNorm
+        );
+
+        // Combine recentActivities from profile + snapshot events
+        const snapshotActivities = teacherFiles.map(s => ({
+          id: `snap-${s.id}`,
+          type:
+            s.actionType === 'mix'
+              ? ('mix' as const)
+              : s.actionType === 'standardize'
+              ? ('standardize' as const)
+              : ('other' as const),
+          label: s.actionLabel || 'Tải đề thi lên hệ thống',
+          fileName: s.originalFileName,
+          timestamp: s.createdAtIso || '',
+        }));
+        const allActivities = [
+          ...(teacherProfile.recentActivities || []),
+          ...snapshotActivities,
+        ]
+          .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+          .slice(0, 35);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md tab-enter">
+            <div className="canva-card w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden border border-neutral-200/90 dark:border-neutral-800 shadow-2xl bg-white dark:bg-[#121319]">
+              {/* Header */}
+              <div className="p-5 sm:p-6 border-b border-neutral-200 dark:border-neutral-800 bg-gradient-to-r from-[#1a1333] via-[#26174a] to-[#0f293a] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <img
+                    src={
+                      teacherProfile.photoURL ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${teacherProfile.email}`
+                    }
+                    alt={teacherProfile.displayName}
+                    className="w-12 h-12 rounded-2xl border-2 border-purple-400/60 object-cover shrink-0"
+                  />
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-cyan-500 text-neutral-950">
+                        THEO DÕI TÀI KHOẢN GIÁO VIÊN
+                      </span>
+                      {isTargetBlocked ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white">
+                          🚫 ĐANG BỊ CHẶN
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-neutral-950">
+                          ✓ ĐANG HOẠT ĐỘNG
+                        </span>
+                      )}
+                      {isTargetUnlimited ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-neutral-950">
+                          ★ VIP KHÔNG GIỚI HẠN LƯỢT NGÀY (∞)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-white/15 text-white">
+                          Hôm nay (00h–23h59): {targetDailyUsed}/{dailyLimit} lượt
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base sm:text-lg font-black text-white mt-1">
+                      {teacherProfile.displayName}
+                    </h3>
+                    <div className="text-xs font-mono text-purple-200">
+                      {teacherProfile.email}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingTeacherEmail(null)}
+                  className="p-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white transition self-end sm:self-center"
+                  title="Đóng cửa sổ"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* KPI Metrics & Quick Control Bar */}
+              <div className="p-4 sm:p-5 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900/60 space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="p-3 rounded-2xl bg-white dark:bg-[#171a26] border border-neutral-200/80 dark:border-neutral-800">
+                    <div className="text-[10px] font-extrabold uppercase text-neutral-400">
+                      Hạn Mức Hôm Nay (00h–23h59)
+                    </div>
+                    <div className="text-lg font-black text-[#7d2ae8] dark:text-purple-300 mt-0.5">
+                      {isTargetUnlimited ? `${targetDailyUsed} / ∞` : `${targetDailyUsed} / ${dailyLimit}`}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-white dark:bg-[#171a26] border border-neutral-200/80 dark:border-neutral-800">
+                    <div className="text-[10px] font-extrabold uppercase text-neutral-400">
+                      Lượt Chuẩn Hóa File
+                    </div>
+                    <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {teacherProfile.examsGeneratedCount || 0} lượt
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-white dark:bg-[#171a26] border border-neutral-200/80 dark:border-neutral-800">
+                    <div className="text-[10px] font-extrabold uppercase text-neutral-400">
+                      Lượt Trộn Mã Đề
+                    </div>
+                    <div className="text-lg font-black text-purple-600 dark:text-purple-400 mt-0.5">
+                      {teacherProfile.mixCount || 0} lượt
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-white dark:bg-[#171a26] border border-neutral-200/80 dark:border-neutral-800">
+                    <div className="text-[10px] font-extrabold uppercase text-neutral-400">
+                      Đề Đã Lưu Kho Cloud
+                    </div>
+                    <div className="text-lg font-black text-amber-600 dark:text-amber-400 mt-0.5">
+                      {teacherFiles.length} file
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Admin Controls for this Teacher */}
+                {!isTargetSuper && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await resetUserDailyQuota(targetNorm);
+                          toast.success(
+                            `Đã reset lượt sử dụng hôm nay về 0/${dailyLimit}!`,
+                            targetNorm
+                          );
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black transition canva-tap"
+                      >
+                        Reset Hạn Mức Hôm Nay Về 0/5
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await toggleUnlimitedQuota(targetNorm, !isTargetUnlimited);
+                          toast.success(
+                            !isTargetUnlimited
+                              ? 'Đã cấp VIP Không Giới Hạn Lượt Ngày (∞)!'
+                              : 'Đã đặt lại giới hạn 5 lượt/ngày!',
+                            targetNorm
+                          );
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black transition canva-tap ${
+                          isTargetUnlimited
+                            ? 'bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200'
+                            : 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white'
+                        }`}
+                      >
+                        {isTargetUnlimited
+                          ? 'Hủy VIP ∞ (Về 5 lượt/ngày)'
+                          : '★ Cấp VIP Không Giới Hạn (∞)'}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleGrantAll(targetNorm, teacherProfile.displayName)}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition canva-tap"
+                      >
+                        Mở Đủ 5 Quyền
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await toggleBlockUser(targetNorm, !isTargetBlocked);
+                          toast.warning(
+                            !isTargetBlocked
+                              ? `🚫 Đã CHẶN tài khoản ${targetNorm}`
+                              : `✓ Đã BỎ CHẶN tài khoản ${targetNorm}`
+                          );
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition canva-tap ${
+                          isTargetBlocked
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : 'bg-red-600 hover:bg-red-700 text-white'
+                        }`}
+                      >
+                        {isTargetBlocked ? '✓ Bỏ Chặn Tài Khoản Này' : '🚫 Chặn Tài Khoản Này'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sub-Tab Selector inside Inspector Modal */}
+              <div className="px-5 pt-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center gap-2 bg-white dark:bg-[#121319]">
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab('files')}
+                  className={`px-4 py-2.5 rounded-t-xl text-xs font-black border-b-2 transition ${
+                    inspectorTab === 'files'
+                      ? 'border-[#7d2ae8] text-[#7d2ae8] dark:text-purple-300 bg-purple-50/60 dark:bg-purple-950/30'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  📁 Dữ Liệu Đề Thi Đã Tải Lên ({teacherFiles.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab('activities')}
+                  className={`px-4 py-2.5 rounded-t-xl text-xs font-black border-b-2 transition ${
+                    inspectorTab === 'activities'
+                      ? 'border-[#7d2ae8] text-[#7d2ae8] dark:text-purple-300 bg-purple-50/60 dark:bg-purple-950/30'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  ⚡ Nhật Ký Tương Tác &amp; Sử Dụng ({allActivities.length})
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-5 overflow-y-auto flex-1 space-y-3 bg-neutral-50/40 dark:bg-black/20">
+                {inspectorTab === 'files' ? (
+                  teacherFiles.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-neutral-400">
+                      Tài khoản này chưa tải file đề thi nào lên Kho Đề Thi.
+                    </div>
+                  ) : (
+                    teacherFiles.map(fileItem => (
+                      <div
+                        key={fileItem.id}
+                        className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181a24] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 dark:bg-purple-950/80 text-[#7d2ae8] dark:text-purple-300">
+                              {fileItem.actionLabel}
+                            </span>
+                            <span className="text-[11px] font-mono text-neutral-400">
+                              {fileItem.formattedTime}
+                            </span>
+                          </div>
+                          <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white">
+                            {fileItem.originalFileName}
+                          </div>
+                          <div className="text-[11px] text-neutral-500">
+                            Số câu hỏi: <strong>{fileItem.questionsCount}</strong> câu ({fileItem.answeredCount} có đáp án)
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInspectingTeacherEmail(null);
+                              void handleOpenPreview(fileItem);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-950/70 text-[#7d2ae8] dark:text-purple-300 text-xs font-bold hover:bg-purple-200 transition"
+                          >
+                            Xem Đề
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadOriginal(fileItem)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition"
+                          >
+                            Tải File Gốc
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadStandardized(fileItem)}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                          >
+                            Tải Chuẩn Hóa
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )
+                ) : allActivities.length === 0 ? (
+                  <div className="p-10 text-center text-xs text-neutral-400">
+                    Chưa có nhật ký tương tác nào được ghi nhận cho tài khoản này.
+                  </div>
+                ) : (
+                  allActivities.map(act => (
+                    <div
+                      key={act.id}
+                      className="p-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181a24] flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#7d2ae8]" />
+                          <span>{act.label}</span>
+                        </div>
+                        {act.fileName && (
+                          <div className="text-[11px] font-mono text-neutral-500 pl-4">
+                            File: {act.fileName}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-mono text-neutral-400 shrink-0">
+                        {act.timestamp
+                          ? new Date(act.timestamp).toLocaleString('vi-VN')
+                          : ''}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#121319] flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setInspectingTeacherEmail(null)}
+                  className="canva-btn-secondary px-5 py-2 rounded-xl text-xs font-bold"
+                >
+                  Đóng Cửa Sổ Theo Dõi
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

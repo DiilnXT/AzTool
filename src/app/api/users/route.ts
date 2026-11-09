@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   try {
     const rawBody = await req.json();
     const body = sanitizeInput(rawBody);
-    const { action, user, email, displayName, photoURL, permissions, dateKey, count } = body;
+    const { action, user, email, displayName, photoURL, permissions, dateKey, count, activityType, activityLabel, fileName } = body;
 
     const targetEmail = ((user?.email || email) as string)?.trim().toLowerCase();
     if (!targetEmail) {
@@ -51,6 +51,9 @@ export async function POST(req: Request) {
         dateKey: typeof dateKey === 'string' ? dateKey : undefined,
         count: typeof count === 'number' ? count : undefined,
         reset: action === 'reset_quota',
+        activityType: typeof activityType === 'string' ? (activityType as any) : undefined,
+        activityLabel: typeof activityLabel === 'string' ? activityLabel : undefined,
+        fileName: typeof fileName === 'string' ? fileName : undefined,
       });
 
       return NextResponse.json(
