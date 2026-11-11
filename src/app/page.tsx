@@ -378,8 +378,17 @@ function MainApp() {
   if (isLoaded && (!user || showLandingPage)) {
     return (
       <LandingPage
-        onEnterWorkspace={() => {
+        onEnterWorkspace={(targetTab?: string) => {
           setShowLandingPage(false);
+          if (
+            targetTab &&
+            (targetTab === 'exam-tools' ||
+              targetTab === 'thesis-auditor' ||
+              targetTab === 'pdf-studio' ||
+              targetTab === 'guide')
+          ) {
+            setActiveTab(targetTab as TopWorkspaceTab);
+          }
         }}
       />
     );

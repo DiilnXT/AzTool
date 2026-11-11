@@ -17,15 +17,28 @@ import {
   Zap,
   LayoutGrid,
   FileSpreadsheet,
+  GraduationCap,
   Presentation,
   Bot,
   Mail,
   X,
+  CheckCircle2,
+  Cpu,
+  BookOpen,
+  FolderLock,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Clock,
+  Award,
+  Users,
+  Compass,
+  ArrowUpRight,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface LandingPageProps {
-  onEnterWorkspace: () => void;
+  onEnterWorkspace: (targetTab?: string) => void;
 }
 
 export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
@@ -42,6 +55,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(0);
 
   const handleGoogleSignIn = async () => {
     setIsLoggingIn(true);
@@ -76,19 +90,129 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
     onEnterWorkspace();
   };
 
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const features = [
+    {
+      id: 'exam-tools',
+      step: 'BỘ TOOL SỐ 01',
+      title: 'Tổ Hợp Soạn Đề (1 • 2 • 3)',
+      desc: 'AI Thẩm định rà soát lỗi đề thi, Chuẩn hóa đề Word giữ nguyên 100% định dạng, Trộn đề trắc nghiệm hoán vị chuẩn 25% với đầy đủ bảng đáp án.',
+      badge: 'Bộ Công Cụ Cốt Lõi',
+      badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+      icon: Wand2,
+      gradient: 'from-[#00c4cc] via-[#7d2ae8] to-[#ff66c4]',
+      capabilities: [
+        'AI Soát lỗi: phát hiện sai đề, thiếu đáp án, trùng phương án',
+        'Chuẩn hóa 1 chạm: nhận diện in đậm, gạch chân, bảng X đỏ',
+        'Trộn mã đề: hoán vị ngẫu nhiên, cân bằng 25% tỷ lệ A-B-C-D',
+        'Xuất file bản Giáo viên & Học sinh độc lập, chuẩn in ấn',
+      ],
+      targetTab: 'exam-tools',
+    },
+    {
+      id: 'thesis-auditor',
+      step: 'BỘ TOOL SỐ 02',
+      title: 'Rà Soát Đề Án & Giáo Trình',
+      desc: 'Trợ lý học thuật tự động quét toàn diện tài liệu Word dài hàng trăm trang: danh mục từ viết tắt, bảng biểu, sơ đồ hình ảnh.',
+      badge: 'Công Nghệ Độc Quyền',
+      badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+      icon: GraduationCap,
+      gradient: 'from-indigo-600 via-purple-600 to-pink-600',
+      capabilities: [
+        'Bóc tách tự động 100% từ viết tắt và vị trí xuất hiện đầu tiên',
+        'Phát hiện lỗi đánh số nhảy cóc hình ảnh (vd: Hình 2.3 nhảy sang 2.5)',
+        'Sửa lỗi trực tiếp vào file Word không làm xô lệch format',
+        'Đồng bộ danh mục bảng, biểu đồ theo chuẩn luận án Tiến sĩ/Thạc sĩ',
+      ],
+      targetTab: 'thesis-auditor',
+    },
+    {
+      id: 'pdf-studio',
+      step: 'BỘ TOOL SỐ 03',
+      title: 'PDF & Cắt Tách Trang Studio',
+      desc: 'Xử lý file PDF dung lượng lớn siêu tốc ngay trên trình duyệt mà không cần cài đặt phần mềm nặng máy hay tải lên server trung gian.',
+      badge: 'Bảo Mật Client-Side',
+      badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+      icon: Layers,
+      gradient: 'from-rose-500 via-orange-500 to-amber-500',
+      capabilities: [
+        'Tách dải trang theo cấu hình tùy chọn (vd: 1-5, 8, 12-20)',
+        'Xoay trang ngang/dọc 90° - 180° - 270° nhanh như chớp',
+        'Gộp nhiều tài liệu PDF thành 1 file duy nhất chuẩn hóa',
+        'Tối ưu hóa dung lượng & trích xuất văn bản nguyên gốc',
+      ],
+      targetTab: 'pdf-studio',
+    },
+  ];
+
+  const faqs = [
+    {
+      q: 'AzTool có làm mất công thức Toán MathType, hình vẽ hay bảng biểu gốc không?',
+      a: 'Tuyệt đối không! AzTool được lập trình bóc tách từng phần tử XML trong tệp Word (.docx) ở tầng byte. Mọi công thức MathType, ký hiệu toán học, hình ảnh, bảng biểu và căn lề đoạn văn đều được bảo lưu 100% nguyên vẹn.',
+    },
+    {
+      q: 'Giới hạn sử dụng miễn phí hàng ngày được tính như thế nào?',
+      a: 'Mỗi tài khoản Google khi đăng nhập được cấp 5 lượt thực thi mỗi ngày (tính từ 00h00 đến 23h59). Chuẩn hóa 1 đề thi tính 1 lượt, trộn đề tính 1 lượt. Sau khi chuẩn hóa, việc tải lại file Word nhiều lần của chính đề đó hoàn toàn không bị trừ thêm lượt. Giáo viên cần dùng không giới hạn có thể liên hệ Quản trị viên để cấp VIP Unlimited.',
+    },
+    {
+      q: 'Dữ liệu và đề thi của tôi có bị lộ ra ngoài không?',
+      a: 'Toàn bộ quy trình xử lý chuẩn hóa, bóc tách và tạo mã đề được thực thi trực tiếp trên trình duyệt của máy bạn (Client-Side). AzTool cam kết bảo mật tuyệt đối, không chia sẻ hay sử dụng đề thi của bạn vào bất kỳ mục đích nào.',
+    },
+    {
+      q: 'Tôi có thể dùng AzTool trên điện thoại thông minh (iPhone/Android) không?',
+      a: 'Có, giao diện AzTool được tối ưu hóa responsive hoàn hảo trên mọi thiết bị. Thậm chí các file tải về trên điện thoại đều được đóng gói chuẩn định dạng .docx để bạn có thể mở và chỉnh sửa trực tiếp trên app Word hoặc WPS Office trên điện thoại.',
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f7f8fd] dark:bg-[#0f1015] text-[#0e1318] dark:text-[#f2f3f7] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white overflow-x-hidden">
+    <div className="min-h-screen bg-[#f7f8fd] dark:bg-[#0b0d13] text-[#0e1318] dark:text-[#f2f3f7] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white overflow-x-hidden">
       {/* Top Glass Navigation Header */}
-      <header className="sticky top-0 z-40 bg-white/90 dark:bg-[#181920]/90 backdrop-blur-md border-b border-neutral-200/80 dark:border-neutral-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 h-16 sm:h-18 flex items-center justify-between gap-3">
-          <DeQLogo size="md" showSubtitle />
+      <header className="sticky top-0 z-40 bg-white/85 dark:bg-[#12151f]/85 backdrop-blur-xl border-b border-neutral-200/80 dark:border-neutral-800/80 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
+          <div className="cursor-pointer" onClick={() => scrollToSection('hero')}>
+            <DeQLogo size="md" showSubtitle />
+          </div>
+
+          {/* Quick Nav Links (Desktop) */}
+          <nav className="hidden md:flex items-center gap-6 text-xs font-bold text-neutral-600 dark:text-neutral-300">
+            <button
+              onClick={() => scrollToSection('features')}
+              className="hover:text-[#7d2ae8] dark:hover:text-[#00c4cc] transition-colors"
+            >
+              Tính Năng Nổi Bật
+            </button>
+            <button
+              onClick={() => scrollToSection('workflow')}
+              className="hover:text-[#7d2ae8] dark:hover:text-[#00c4cc] transition-colors"
+            >
+              Quy Trình 3 Bước
+            </button>
+            <button
+              onClick={() => scrollToSection('roadmap')}
+              className="hover:text-[#7d2ae8] dark:hover:text-[#00c4cc] transition-colors"
+            >
+              Hệ Sinh Thái
+            </button>
+            <button
+              onClick={() => scrollToSection('faq')}
+              className="hover:text-[#7d2ae8] dark:hover:text-[#00c4cc] transition-colors"
+            >
+              Hỏi Đáp (FAQ)
+            </button>
+          </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Theme Toggle Button */}
             <button
               type="button"
               onClick={toggleTheme}
-              className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 hover:border-[#7d2ae8] transition canva-tap"
+              className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 hover:border-[#7d2ae8] transition-all canva-tap"
               title={theme === 'dark' ? 'Chuyển sang Giao diện Sáng' : 'Chuyển sang Giao diện Tối'}
             >
               {theme === 'dark' ? (
@@ -101,58 +225,72 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             {user ? (
               <button
                 type="button"
-                onClick={onEnterWorkspace}
+                onClick={() => onEnterWorkspace()}
                 className="canva-btn-primary px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-md canva-tap"
               >
-                <span>Mở Không Gian Làm Việc</span>
+                <span>Mở Workspace</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={isLoggingIn}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md hover:border-[#7d2ae8] text-xs font-bold text-neutral-800 dark:text-white transition canva-tap"
-              >
-                {isLoggingIn ? (
-                  <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
-                ) : (
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
-                    />
-                  </svg>
-                )}
-                <span>{isLoggingIn ? 'Đang kết nối...' : 'Đăng Nhập'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailModal(true)}
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition canva-tap"
+                >
+                  <Mail className="w-3.5 h-3.5 text-[#7d2ae8]" />
+                  <span>Email</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoggingIn}
+                  className="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md hover:border-[#7d2ae8] text-xs font-bold text-neutral-800 dark:text-white transition canva-tap"
+                >
+                  {isLoggingIn ? (
+                    <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
+                  ) : (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+                      />
+                    </svg>
+                  )}
+                  <span>{isLoggingIn ? 'Đang xác thực...' : 'Đăng Nhập'}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
       </header>
 
-      {/* Hero Section with Calligraphy AzTool Animation */}
-      <section className="relative overflow-hidden canva-gradient-header text-white pt-12 sm:pt-18 pb-20 sm:pb-28 px-4 sm:px-8">
-        <div className="absolute -top-16 right-12 w-96 h-96 bg-[#00c4cc]/25 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
-        <div className="absolute -bottom-20 left-10 w-96 h-96 bg-[#ff66c4]/20 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
+      {/* Hero Section with Calligraphy AzTool Branding & Glow */}
+      <section
+        id="hero"
+        className="relative overflow-hidden canva-gradient-header text-white pt-14 sm:pt-20 pb-24 sm:pb-32 px-4 sm:px-8"
+      >
+        <div className="absolute -top-24 right-10 w-[500px] h-[500px] bg-[#00c4cc]/20 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
+        <div className="absolute -bottom-24 left-10 w-[500px] h-[500px] bg-[#ff66c4]/20 rounded-full blur-3xl pointer-events-none canva-ambient-glow" />
 
         <div className="max-w-5xl mx-auto text-center relative z-10 space-y-6">
           <div className="flex flex-col items-center justify-center gap-3">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold text-white">
-              <Sparkles className="w-3.5 h-3.5 text-[#00c4cc]" />
-              <span>Hệ Sinh Thái Công Cụ Số &amp; Trí Tuệ Nhân Tạo Đa Năng</span>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold text-white shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-[#00c4cc] animate-pulse" />
+              <span>Nền Tảng Trợ Lý Sư Phạm &amp; Khảo Thí 4.0</span>
             </div>
 
             <div className="pt-2">
@@ -161,22 +299,22 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
           </div>
 
           <h1 className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight leading-tight max-w-4xl mx-auto canva-gradient-text-hero">
-            Nền tảng tự động hóa tài liệu, khảo thí &amp; trợ lý AI thế hệ mới
+            Tự động hóa soạn đề thi, rà soát đề án &amp; xử lý tài liệu thông minh
           </h1>
 
           <p className="text-xs sm:text-base text-purple-100/90 max-w-2xl mx-auto leading-relaxed font-normal px-2">
-            Tối ưu hóa quy trình biên soạn, rà soát lỗi chuyên môn bằng AI, chuẩn hóa tài liệu Word chỉ với 1 chạm và mở rộng không giới hạn cùng kho công cụ thông minh trên <strong>AzTool</strong>.
+            Giải phóng 90% thời gian thủ công cho Thầy Cô và Chuyên gia. Tự động soát lỗi đề bằng AI, chuẩn hóa Word 1 chạm, trộn đề phân bổ đều 25% đáp án và kiểm tra cấu trúc giáo trình chuyên sâu.
           </p>
 
-          {/* Primary Call to Action Buttons */}
-          <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-3.5 max-w-lg sm:max-w-none mx-auto">
+          {/* Primary Action Buttons */}
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3.5 max-w-lg sm:max-w-none mx-auto">
             {!user ? (
               <>
                 <button
                   type="button"
                   onClick={handleGoogleSignIn}
                   disabled={isLoggingIn}
-                  className="w-full sm:w-auto flex items-center justify-center gap-3 px-7 py-4 rounded-2xl bg-white text-neutral-900 font-black text-sm shadow-2xl hover:scale-[1.02] transition canva-tap"
+                  className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-white text-neutral-900 font-black text-sm shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all canva-tap group"
                 >
                   {isLoggingIn ? (
                     <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
@@ -200,146 +338,191 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                       />
                     </svg>
                   )}
-                  <span>{isLoggingIn ? 'Đang Xác Thực...' : 'Đăng Nhập Bằng Google'}</span>
+                  <span>{isLoggingIn ? 'Đang xác thực...' : 'Đăng Nhập Với Google'}</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={onEnterWorkspace}
-                  className="w-full sm:w-auto canva-btn-primary px-7 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-xl canva-tap border border-white/25"
+                  onClick={() => onEnterWorkspace('exam-tools')}
+                  className="w-full sm:w-auto canva-btn-primary px-8 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2.5 shadow-xl canva-tap border border-white/25 hover:border-white/50 transition-all"
                 >
-                  <span>Trải Nghiệm Ngay</span>
+                  <span>Dùng Ngay Không Cần Chờ</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                onClick={onEnterWorkspace}
-                className="w-full sm:w-auto canva-btn-primary px-8 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2.5 shadow-2xl canva-tap border border-white/25"
+                onClick={() => onEnterWorkspace()}
+                className="w-full sm:w-auto canva-btn-primary px-9 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-3 shadow-2xl canva-tap border border-white/25 hover:scale-[1.02] transition-all"
               >
-                <span>Vào Không Gian Làm Việc AzTool</span>
+                <span>Mở Không Gian Làm Việc AzTool</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          {/* Trust & Platform Badges */}
-          <div className="pt-4 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-purple-200/85">
-            <div className="flex items-center gap-1.5">
+          {/* Quick Metrics & Trust Badges */}
+          <div className="pt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-purple-200/90">
+            <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-[#00c4cc]" />
-              <span>Xử lý tức thì trên trình duyệt</span>
+              <span>Xử lý 100 câu trắc nghiệm chỉ mất 1.5 giây</span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Bảo toàn 100% định dạng tài liệu gốc</span>
+              <span>Giữ 100% MathType &amp; định dạng gốc</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <LayoutGrid className="w-4 h-4 text-[#ff66c4]" />
-              <span>Tương thích hoàn hảo Laptop &amp; Điện thoại</span>
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-[#ff66c4]" />
+              <span>5 lượt miễn phí mỗi ngày (00h00 - 23h59)</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* AzTool Multi-App Ecosystem Section */}
-      <section className="max-w-6xl w-full mx-auto px-4 sm:px-8 -mt-12 pb-16 relative z-20 space-y-10">
-        {/* Active Suite Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div
-            onClick={onEnterWorkspace}
-            className="canva-card-interactive p-6 space-y-3 border border-purple-100 dark:border-purple-900/40 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00c4cc] to-[#7d2ae8] text-white flex items-center justify-center shadow-md">
-                <Wand2 className="w-6 h-6" />
+      {/* Feature Section: 3 Deep Core Modules */}
+      <section id="features" className="max-w-6xl w-full mx-auto px-4 sm:px-8 -mt-14 pb-16 relative z-20 space-y-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {features.map(f => {
+            const Icon = f.icon;
+            return (
+              <div
+                key={f.id}
+                onClick={() => onEnterWorkspace(f.targetTab)}
+                className="canva-card-interactive p-6 sm:p-7 space-y-4 border border-neutral-200/80 dark:border-neutral-800 bg-white/95 dark:bg-[#151824]/95 backdrop-blur-md rounded-3xl cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`w-13 h-13 rounded-2xl bg-gradient-to-br ${f.gradient} text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300`}
+                    >
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <span
+                      className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${f.badgeColor}`}
+                    >
+                      {f.badge}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider">
+                      {f.step}
+                    </span>
+                    <h3 className="text-lg font-black text-neutral-900 dark:text-white group-hover:text-[#7d2ae8] dark:group-hover:text-[#00c4cc] transition-colors flex items-center justify-between">
+                      <span>{f.title}</span>
+                      <ArrowUpRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </h3>
+                  </div>
+
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                    {f.desc}
+                  </p>
+
+                  <div className="space-y-2 pt-2 border-t border-neutral-100 dark:border-neutral-800/80">
+                    {f.capabilities.map((cap, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[11px] text-neutral-700 dark:text-neutral-300">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#00c4cc] shrink-0 mt-0.5" />
+                        <span>{cap}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      onEnterWorkspace(f.targetTab);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-neutral-100 dark:bg-neutral-800 hover:bg-[#7d2ae8] hover:text-white dark:hover:bg-[#7d2ae8] transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span>Mở Công Cụ Này</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                Đang Hoạt Động
-              </span>
-            </div>
-            <h3 className="text-base font-black text-neutral-900 dark:text-white">
-              AI Thẩm Định &amp; Soát Lỗi Đề Thi
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Tự động phát hiện câu hỏi sai đề, câu thiếu đáp án đúng, câu chọn nhầm đáp án hoặc trùng lặp phương án. Đề xuất 3 phiên bản sửa chuẩn sư phạm chỉ với 1 chạm.
+            );
+          })}
+        </div>
+
+        {/* Workflow Showcase: 3 Step Process */}
+        <div id="workflow" className="canva-card p-6 sm:p-10 border border-neutral-200/80 dark:border-neutral-800 space-y-8 rounded-3xl">
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#7d2ae8] dark:text-purple-400">
+              Quy Trình Siêu Đơn Giản
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black text-neutral-900 dark:text-white">
+              Chuẩn Hóa &amp; Trộn Đề Thi Chỉ Trong 3 Bước
+            </h2>
+            <p className="text-xs sm:text-sm text-neutral-500">
+              Không cần cài đặt phức tạp, thực hiện toàn bộ ngay trên trình duyệt máy tính hoặc điện thoại
             </p>
           </div>
 
-          <div
-            onClick={onEnterWorkspace}
-            className="canva-card-interactive p-6 space-y-3 border border-emerald-100 dark:border-emerald-900/40 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-[#00c4cc] text-white flex items-center justify-center shadow-md">
-                <FileCheck className="w-6 h-6" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+            <div className="p-5 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/60 dark:border-neutral-800 space-y-3 relative">
+              <div className="w-8 h-8 rounded-xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shadow-sm">
+                1
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                Đang Hoạt Động
-              </span>
+              <h4 className="font-bold text-sm text-neutral-900 dark:text-white">
+                Tải File Đề Thi Lên
+              </h4>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Hệ thống nhận diện mọi dạng đề Word (.docx) dù đáp án được bôi đậm, gạch chân hoặc nằm trong bảng đáp án chữ cái.
+              </p>
             </div>
-            <h3 className="text-base font-black text-neutral-900 dark:text-white">
-              Chuẩn Hóa Đề Word 1 Chạm
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Nhận diện đáp án thông minh từ mọi định dạng (in đậm, gạch chân, bảng đáp án X). Tự động xuất bản Sinh viên và bản Giảng viên giữ nguyên 100% tiêu đề gốc.
-            </p>
+
+            <div className="p-5 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/60 dark:border-neutral-800 space-y-3 relative">
+              <div className="w-8 h-8 rounded-xl bg-[#00c4cc] text-white font-black text-sm flex items-center justify-center shadow-sm">
+                2
+              </div>
+              <h4 className="font-bold text-sm text-neutral-900 dark:text-white">
+                AI Soát Lỗi &amp; Chuẩn Hóa
+              </h4>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                AI phát hiện câu sai ngữ pháp, thiếu đáp án hoặc câu trùng. Bạn có thể sửa ngay và xuất bản chuẩn có bảng đáp án đỏ.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/60 dark:border-neutral-800 space-y-3 relative">
+              <div className="w-8 h-8 rounded-xl bg-[#ff66c4] text-white font-black text-sm flex items-center justify-center shadow-sm">
+                3
+              </div>
+              <h4 className="font-bold text-sm text-neutral-900 dark:text-white">
+                Trộn Đề 25% &amp; Đóng Gói
+              </h4>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Chọn số mã đề (từ 2 đến 24 đề), thuật toán hoán vị cân bằng 25% các phương án và tự động xuất file ZIP kèm đáp án chi tiết.
+              </p>
+            </div>
           </div>
 
-          <div
-            onClick={onEnterWorkspace}
-            className="canva-card-interactive p-6 space-y-3 border border-pink-100 dark:border-pink-900/40 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#ff66c4] to-[#7d2ae8] text-white flex items-center justify-center shadow-md">
-                <Shuffle className="w-6 h-6" />
-              </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                Đang Hoạt Động
-              </span>
-            </div>
-            <h3 className="text-base font-black text-neutral-900 dark:text-white">
-              Trộn Mã Đề Cân Bằng 25%
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Thuật toán hoán vị thông minh phân bổ đều 25% đáp án A-B-C-D, tự động điền mã đề, đánh dấu phiếu trả lời và đóng gói trọn bộ file nén ZIP.
-            </p>
-          </div>
-
-          <div
-            onClick={onEnterWorkspace}
-            className="canva-card-interactive p-6 space-y-3 border border-rose-100 dark:border-rose-900/40 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-500 via-orange-500 to-amber-500 text-white flex items-center justify-center shadow-md">
-                <Layers className="w-6 h-6" />
-              </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                14 Công Cụ Mới
-              </span>
-            </div>
-            <h3 className="text-base font-black text-neutral-900 dark:text-white">
-              PDF &amp; Office Studio Chuyên Sâu
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Chuyển đổi PDF sang Word/PPTX, Word/Excel/PPT sang PDF, Xoay/Xóa trang, Đánh số trang, Xén viền trắng, Cắt/Gộp/Nén PDF và Trích xuất ảnh.
-            </p>
+          <div className="flex justify-center pt-2">
+            <button
+              onClick={() => onEnterWorkspace('exam-tools')}
+              className="canva-btn-primary px-8 py-3 rounded-xl text-xs font-bold flex items-center gap-2 shadow-md canva-tap"
+            >
+              <span>Trải Nghiệm Trộn Đề Ngay</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        {/* Upcoming Modules in AzTool Ecosystem */}
-        <div className="canva-card p-6 sm:p-8 border border-neutral-200/80 dark:border-neutral-800 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {/* Roadmap & Upcoming Ecosystem */}
+        <div id="roadmap" className="canva-card p-6 sm:p-8 border border-neutral-200/80 dark:border-neutral-800 space-y-6 rounded-3xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-4">
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#7d2ae8] dark:text-purple-400">
                 Hệ Sinh Thái Mở Rộng
               </span>
-              <h2 className="text-lg sm:text-xl font-black text-neutral-900 dark:text-white">
-                Kho Công Cụ Thông Minh AzTool Sắp Ra Mắt
+              <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white">
+                Kho Công Cụ Thông Minh Đang Phát Triển
               </h2>
             </div>
             <span className="text-xs text-neutral-500">
-              Liên tục cập nhật các tiện ích tự động hóa mới
+              Liên tục cập nhật phục vụ giảng dạy &amp; nghiên cứu
             </span>
           </div>
 
@@ -350,13 +533,13 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               </div>
               <div className="space-y-1">
                 <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                  <span>Tạo Đề Từ Giáo Trình PDF</span>
+                  <span>Tạo Đề Từ Sách &amp; Giáo Trình PDF</span>
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-[#7d2ae8] dark:bg-purple-950 dark:text-purple-300">
-                    Sắp mở
+                    Sắp ra mắt
                   </span>
                 </div>
                 <p className="text-neutral-500 leading-relaxed">
-                  Tải giáo trình PDF/Word để AI tự động trích xuất ngân hàng câu hỏi theo ma trận mức độ nhận thức.
+                  Tải giáo trình PDF hoặc dàn ý bài giảng để AI sinh bộ câu hỏi trắc nghiệm theo 4 mức độ nhận thức.
                 </p>
               </div>
             </div>
@@ -367,13 +550,13 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               </div>
               <div className="space-y-1">
                 <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                  <span>Chấm Phiếu &amp; Thống Kê Điểm</span>
+                  <span>Chấm Thi &amp; Phổ Điểm Thông Minh</span>
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300">
-                    Sắp mở
+                    Sắp ra mắt
                   </span>
                 </div>
                 <p className="text-neutral-500 leading-relaxed">
-                  Tự động đối chiếu bảng đáp án các mã đề, xuất báo cáo phổ điểm và phân tích độ khó từng câu hỏi.
+                  Tự động so khớp bảng đáp án các mã đề, thống kê phổ điểm và xuất file kết quả tích hợp app chấm thi TnMaker.
                 </p>
               </div>
             </div>
@@ -384,50 +567,132 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               </div>
               <div className="space-y-1">
                 <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                  <span>AzTool Slide &amp; Docx Studio</span>
+                  <span>Trắc Nghiệm GDPT 2018 Mới</span>
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-pink-100 text-pink-600 dark:bg-pink-950 dark:text-pink-300">
-                    Sắp mở
+                    Sắp ra mắt
                   </span>
                 </div>
                 <p className="text-neutral-500 leading-relaxed">
-                  Chuyển đổi tài liệu thô sang bài thuyết trình chuyên nghiệp và chuẩn hóa văn bản hành chính tự động.
+                  Hỗ trợ trọn gói định dạng đề thi mới: Trắc nghiệm Đúng/Sai 4 ý và Câu hỏi trả lời ngắn điền số.
                 </p>
               </div>
             </div>
           </div>
         </div>
+
+        {/* FAQ Accordion Section */}
+        <div id="faq" className="canva-card p-6 sm:p-10 border border-neutral-200/80 dark:border-neutral-800 space-y-6 rounded-3xl">
+          <div className="text-center max-w-xl mx-auto space-y-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#7d2ae8] dark:text-purple-400">
+              Giải Đáp Thắc Mắc
+            </span>
+            <h2 className="text-2xl font-black text-neutral-900 dark:text-white">
+              Câu Hỏi Thường Gặp (FAQ)
+            </h2>
+          </div>
+
+          <div className="space-y-3 max-w-3xl mx-auto">
+            {faqs.map((item, idx) => {
+              const isOpen = expandedFaq === idx;
+              return (
+                <div
+                  key={idx}
+                  className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 overflow-hidden transition-colors bg-white dark:bg-[#151824]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setExpandedFaq(isOpen ? null : idx)}
+                    className="w-full p-4.5 text-left font-bold text-xs sm:text-sm flex items-center justify-between gap-3 text-neutral-900 dark:text-white hover:text-[#7d2ae8] transition-colors"
+                  >
+                    <span>{item.q}</span>
+                    {isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-[#7d2ae8] shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+                    )}
+                  </button>
+                  {isOpen && (
+                    <div className="px-4.5 pb-4 text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed border-t border-neutral-100 dark:border-neutral-800/80 pt-3">
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </section>
 
-      {/* Clean, Professional SaaS Footer */}
-      <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181920] py-8 text-xs text-neutral-500 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5 font-bold text-neutral-800 dark:text-neutral-200">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00c4cc]" />
-            <span>© 2026 AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
+      {/* Professional SaaS Footer */}
+      <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#12151f] py-10 text-xs text-neutral-500 mt-auto">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="cursor-pointer" onClick={() => scrollToSection('hero')}>
+              <DeQLogo size="sm" showSubtitle />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+              <button
+                onClick={() => onEnterWorkspace('exam-tools')}
+                className="hover:text-[#7d2ae8] transition-colors"
+              >
+                Soạn Đề Thi
+              </button>
+              <button
+                onClick={() => onEnterWorkspace('thesis-auditor')}
+                className="hover:text-[#7d2ae8] transition-colors"
+              >
+                Rà Soát Đề Án
+              </button>
+              <button
+                onClick={() => onEnterWorkspace('pdf-studio')}
+                className="hover:text-[#7d2ae8] transition-colors"
+              >
+                Cắt Tách PDF
+              </button>
+              <button
+                onClick={() => onEnterWorkspace('guide')}
+                className="hover:text-[#7d2ae8] transition-colors"
+              >
+                Quy Chuẩn Soạn Đề
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-5 text-[11px] text-neutral-400">
-            <span className="hover:text-[#7d2ae8] cursor-pointer transition">Điều khoản dịch vụ</span>
-            <span className="hover:text-[#7d2ae8] cursor-pointer transition">Chính sách bảo mật</span>
-            <span className="hover:text-[#7d2ae8] cursor-pointer transition">Hướng dẫn sử dụng</span>
-            <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Hệ thống hoạt động ổn định
-            </span>
+
+          <div className="border-t border-neutral-100 dark:border-neutral-800/80 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-neutral-400">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#00c4cc]" />
+              <span>© 2026 AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <a
+                href="mailto:lenhatduy.vietnam@gmail.com"
+                className="hover:text-[#7d2ae8] transition-colors flex items-center gap-1 text-neutral-500 dark:text-neutral-400"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Liên hệ Admin: lenhatduy.vietnam@gmail.com</span>
+              </a>
+              <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Server Online
+              </span>
+            </div>
           </div>
         </div>
       </footer>
 
-      {/* Fallback Clean Google Account Sign-In Dialog (No keys or technical info exposed) */}
+      {/* Clean Email Sign-In Dialog */}
       {showEmailModal && (
         <div
           role="dialog"
           aria-modal="true"
           onClick={() => setShowEmailModal(false)}
-          className="fixed inset-0 z-[120] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop-enter"
+          className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop-enter"
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="canva-card rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 border border-purple-200 dark:border-purple-900/50 modal-card-enter"
+            className="canva-card rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 border border-purple-200 dark:border-purple-900/50 modal-card-enter bg-white dark:bg-[#151824]"
           >
             <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3.5">
               <div className="flex items-center gap-2.5">
@@ -439,7 +704,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                     Đăng Nhập Tài Khoản AzTool
                   </h3>
                   <p className="text-[11px] text-neutral-500">
-                    Nhập địa chỉ Gmail của bạn để tiếp tục vào không gian làm việc
+                    Nhập địa chỉ Gmail để tiếp tục vào không gian làm việc
                   </p>
                 </div>
               </div>
@@ -474,7 +739,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   type="text"
                   value={nameInput}
                   onChange={e => setNameInput(e.target.value)}
-                  placeholder="VD: Nguyễn Văn A"
+                  placeholder="VD: Thầy Nguyễn Văn A"
                   className="w-full p-3 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#7d2ae8]"
                 />
               </div>
