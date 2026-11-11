@@ -503,13 +503,13 @@ function MainApp() {
 
       {/* High-Contrast Feature Module Dock (Shown when NOT on Hub) */}
       {activeTab !== 'hub' && (
-        <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs animate-in fade-in duration-200">
-          <div className="max-w-7xl mx-auto">
-            <div className="flex items-center justify-between pb-3">
+        <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-3 sm:py-4 px-3 sm:px-6 shadow-xs animate-in fade-in duration-200 overflow-hidden">
+          <div className="max-w-7xl mx-auto space-y-2.5">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setActiveTab('hub')}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 text-xs font-black hover:bg-purple-100 dark:hover:bg-purple-900/50 transition canva-tap"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 text-xs font-black hover:bg-purple-100 dark:hover:bg-purple-900/50 transition canva-tap"
               >
                 <span>← Kho Tính Năng (Tất cả Skills)</span>
               </button>
@@ -519,10 +519,11 @@ function MainApp() {
               </span>
             </div>
 
+            {/* Mobile swipeable strip / Desktop responsive grid */}
             <div
-              className={`grid grid-cols-2 sm:grid-cols-2 ${
+              className={`flex sm:grid sm:grid-cols-2 ${
                 isSuperAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'
-              } gap-2.5 sm:gap-3`}
+              } gap-2 sm:gap-3 overflow-x-auto sm:overflow-x-visible no-scrollbar pb-1.5 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0`}
             >
               {navCards.map(card => {
                 const Icon = card.icon;
@@ -531,26 +532,26 @@ function MainApp() {
                   <button
                     key={card.id}
                     onClick={() => setActiveTab(card.id)}
-                    className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap ${
+                    className={`group relative flex items-start gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap shrink-0 w-[230px] sm:w-auto ${
                       isActive
                         ? `${card.activeRing} ring-2 shadow-md scale-[1.01]`
                         : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#171a26] hover:border-purple-400/60 dark:hover:border-purple-500/50 hover:shadow-sm'
                     }`}
                   >
                     <div
-                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
+                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500">
+                        <span className="text-[9px] sm:text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500 truncate">
                           {card.step}
                         </span>
                         {card.requirePerm && (
                           <span
-                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold shrink-0 ${
                               card.unlocked
                                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
                                 : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
@@ -572,7 +573,7 @@ function MainApp() {
                       <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
                         {card.title}
                       </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                      <div className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
                         {card.desc}
                       </div>
                     </div>
@@ -584,19 +585,19 @@ function MainApp() {
               {isSuperAdmin && (
                 <button
                   onClick={() => setActiveTab('admin')}
-                  className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 xl:col-span-1 ${
+                  className={`group relative flex items-start gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap shrink-0 w-[230px] sm:w-auto col-span-2 xl:col-span-1 ${
                     activeTab === 'admin'
                       ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
                       : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-                    <Crown className="w-5 h-5" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Crown className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
+                      <span className="text-[9px] sm:text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
                         ADMIN DUY LÊ
                       </span>
                       <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-500 text-white">
@@ -607,7 +608,7 @@ function MainApp() {
                     <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
                       Trung Tâm Quản Trị
                     </div>
-                    <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                    <div className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
                       Phân quyền &amp; Kho đề thi
                     </div>
                   </div>
@@ -619,7 +620,7 @@ function MainApp() {
       )}
 
       {/* Main Workspace Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20 space-y-5">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-20 relative z-20 space-y-4 sm:space-y-5">
         {/* Daily Usage Quota Bar (5 uses/day: 00h00 - 23h59) for Logged-in Google Users */}
         {!isSuperAdmin && user && (
           <div

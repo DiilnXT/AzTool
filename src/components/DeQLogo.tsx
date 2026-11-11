@@ -184,7 +184,7 @@ export function DeQLogo({
       {showSubtitle ? (
         <div className="flex flex-col leading-none">
           <div className="flex items-center gap-1.5">
-            <span className={`${dimensions.title} font-black tracking-tight canva-gradient-text`}>
+            <span className={`${dimensions.title} font-black tracking-tight canva-gradient-text whitespace-nowrap`}>
               AzTool
             </span>
             <span className="px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider rounded-md bg-gradient-to-r from-[#00c4cc] to-[#7d2ae8] text-white shadow-2xs">
@@ -192,7 +192,7 @@ export function DeQLogo({
             </span>
           </div>
           <span
-            className={`${dimensions.sub} font-semibold text-neutral-400 dark:text-neutral-500 tracking-wide mt-0.5`}
+            className={`${dimensions.sub} hidden sm:block font-semibold text-neutral-400 dark:text-neutral-500 tracking-wide mt-0.5 whitespace-nowrap`}
           >
             Nền tảng Tài liệu &amp; Khảo thí
           </span>

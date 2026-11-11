@@ -21,6 +21,8 @@ import {
   Presentation,
   Bot,
   Mail,
+  User,
+  Lock,
   X,
   CheckCircle2,
   Cpu,
@@ -60,6 +62,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
   const toast = useToast();
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isModalOAuthLoading, setIsModalOAuthLoading] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
@@ -77,12 +80,47 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
         );
         confetti({ particleCount: 55, spread: 65 });
         onEnterWorkspace();
+      } else {
+        setShowEmailModal(true);
       }
     } catch {
       setShowEmailModal(true);
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleModalGoogleOAuth = async () => {
+    setIsModalOAuthLoading(true);
+    try {
+      const ok = await loginWithRealGoogleOAuth();
+      if (ok) {
+        toast.success(
+          'Đăng nhập Google thành công!',
+          'Chào mừng bạn đến với không gian làm việc thông minh AzTool Studio.'
+        );
+        confetti({ particleCount: 55, spread: 65 });
+        setShowEmailModal(false);
+        onEnterWorkspace();
+      } else {
+        toast.info(
+          'Đăng nhập trực tiếp bằng Gmail',
+          'Vui lòng nhập trực tiếp địa chỉ Gmail bên dưới để đăng nhập ngay vào hệ thống.'
+        );
+      }
+    } catch {
+      toast.info(
+        'Đăng nhập trực tiếp bằng Gmail',
+        'Vui lòng nhập trực tiếp địa chỉ Gmail bên dưới để đăng nhập ngay mà không cần mở popup.'
+      );
+    } finally {
+      setIsModalOAuthLoading(false);
+    }
+  };
+
+  const handleQuickFill = (email: string, name: string) => {
+    setEmailInput(email);
+    setNameInput(name);
   };
 
   const handleEmailContinue = async (e: React.FormEvent) => {
@@ -205,12 +243,12 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0d0f18] text-[#f2f4f8] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white overflow-x-hidden">
+    <div className="min-h-screen bg-[#0d0f18] text-[#f2f4f8] flex flex-col font-sans selection:bg-[#7d2ae8] selection:text-white w-full max-w-full overflow-x-hidden">
       {/* Dynamic Background Mesh Grid & Glows */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[550px] bg-gradient-to-b from-[#7d2ae8]/20 via-[#00c4cc]/15 to-transparent blur-[120px]" />
-        <div className="absolute bottom-1/4 right-0 w-[500px] h-[500px] bg-[#ff66c4]/10 blur-[130px]" />
-        <div className="absolute top-1/3 left-0 w-[500px] h-[500px] bg-[#00c4cc]/10 blur-[130px]" />
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] sm:w-[1000px] h-[350px] sm:h-[550px] bg-gradient-to-b from-[#7d2ae8]/20 via-[#00c4cc]/15 to-transparent blur-[80px] sm:blur-[120px]" />
+        <div className="absolute bottom-1/4 right-0 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-[#ff66c4]/10 blur-[80px] sm:blur-[130px]" />
+        <div className="absolute top-1/3 left-0 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-[#00c4cc]/10 blur-[80px] sm:blur-[130px]" />
         <div
           className="absolute inset-0 opacity-[0.03] dark:opacity-[0.06]"
           style={{
@@ -221,10 +259,10 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </div>
 
       {/* Floating Top Navigation Header */}
-      <header className="sticky top-0 z-50 w-full bg-[#0d0f18]/80 backdrop-blur-xl border-b border-white/10 transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 h-18 flex items-center justify-between gap-4">
-          <div className="cursor-pointer" onClick={() => scrollToSection('hero')}>
-            <DeQLogo size="md" showSubtitle />
+      <header className="sticky top-0 z-50 w-full bg-[#0d0f18]/85 backdrop-blur-xl border-b border-white/10 transition-colors">
+        <div className="max-w-7xl mx-auto px-3 sm:px-8 h-15 sm:h-18 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="cursor-pointer shrink-0" onClick={() => scrollToSection('hero')}>
+            <DeQLogo size="sm" showSubtitle />
           </div>
 
           {/* Quick Nav Links */}
@@ -255,17 +293,17 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             </button>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <button
               type="button"
               onClick={toggleTheme}
-              className="p-2.5 rounded-xl border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:border-[#7d2ae8] transition canva-tap"
+              className="p-2 sm:p-2.5 rounded-xl border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:border-[#7d2ae8] transition canva-tap"
               title={theme === 'dark' ? 'Chuyển sang Giao diện Sáng' : 'Chuyển sang Giao diện Tối'}
             >
               {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-400" />
+                <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
               ) : (
-                <Moon className="w-4 h-4 text-neutral-300" />
+                <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neutral-300" />
               )}
             </button>
 
@@ -273,13 +311,13 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               <button
                 type="button"
                 onClick={() => onEnterWorkspace()}
-                className="canva-btn-primary px-5 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-lg canva-tap"
+                className="canva-btn-primary px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 sm:gap-2 shadow-lg canva-tap"
               >
                 <span>Mở Workspace</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setShowEmailModal(true)}
@@ -293,7 +331,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   type="button"
                   onClick={handleGoogleSignIn}
                   disabled={isLoggingIn}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-neutral-950 shadow-md hover:bg-neutral-100 text-xs font-black transition canva-tap"
+                  className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-white text-neutral-950 shadow-md hover:bg-neutral-100 text-xs font-black transition canva-tap"
                 >
                   {isLoggingIn ? (
                     <DeQLogo size="xs" showSubtitle={false} isLoadingMode />
@@ -317,7 +355,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                       />
                     </svg>
                   )}
-                  <span>{isLoggingIn ? 'Đang kết nối...' : 'Đăng Nhập'}</span>
+                  <span>{isLoggingIn ? '...' : 'Đăng Nhập'}</span>
                 </button>
               </div>
             )}
@@ -328,36 +366,36 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       {/* Hero Section */}
       <section
         id="hero"
-        className="relative z-10 pt-16 sm:pt-24 pb-20 sm:pb-28 px-4 sm:px-8 max-w-6xl mx-auto text-center space-y-8"
+        className="relative z-10 pt-10 sm:pt-24 pb-14 sm:pb-28 px-3.5 sm:px-8 max-w-6xl mx-auto text-center space-y-5 sm:space-y-8 w-full overflow-hidden"
       >
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-xs font-bold text-neutral-300 shadow-sm animate-pulse">
+        <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-[10px] sm:text-xs font-bold text-neutral-300 shadow-sm animate-pulse">
           <Sparkles className="w-3.5 h-3.5 text-[#00c4cc]" />
-          <span>Phiên Bản Quốc Tế Thế Hệ Mới • Trợ Lý Sư Phạm Số 1</span>
+          <span>Phiên Bản Quốc Tế Thế Hệ Mới • Trợ Lý Sư Phạm</span>
         </div>
 
         <div className="pt-1">
-          <DeQLogo size="xl" showSubtitle={false} />
+          <DeQLogo size="lg" showSubtitle={false} />
         </div>
 
-        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] max-w-5xl mx-auto text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-100 to-neutral-400">
-          Nền tảng Tự Động Hóa Đề Thi &amp; Soát Đề Án Word Chuẩn Xác 100%
+        <h1 className="text-2xl sm:text-5xl lg:text-7xl font-black tracking-tight leading-tight sm:leading-[1.1] max-w-5xl mx-auto text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-100 to-neutral-400">
+          Tự Động Hóa Đề Thi &amp; Soát Đề Án Word Chuẩn Xác 100%
         </h1>
 
-        <p className="text-sm sm:text-base md:text-lg text-neutral-400 max-w-3xl mx-auto leading-relaxed">
+        <p className="text-xs sm:text-base md:text-lg text-neutral-400 max-w-3xl mx-auto leading-relaxed">
           Giải phóng hoàn toàn thời gian thủ công cho Thầy Cô. Tự động nhận diện đáp án bôi đậm, gạch chân, soát lỗi đề bằng AI, trộn đề cân bằng 25% A-B-C-D và kiểm duyệt danh mục giáo trình dài hàng trăm trang.
         </p>
 
         {/* Hero Actions */}
-        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4 max-w-md sm:max-w-none mx-auto">
+        <div className="pt-2 sm:pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 max-w-md sm:max-w-none mx-auto w-full">
           {!user ? (
             <>
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={isLoggingIn}
-                className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-white text-neutral-950 font-black text-sm shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 canva-tap"
+                className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-white text-neutral-950 font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 sm:gap-3 canva-tap"
               >
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
                     d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
@@ -381,7 +419,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               <button
                 type="button"
                 onClick={() => onEnterWorkspace('exam-tools')}
-                className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-sm shadow-[0_0_30px_rgba(125,42,232,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 canva-tap"
+                className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(125,42,232,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 canva-tap"
               >
                 <span>Vào Làm Việc Ngay</span>
                 <ArrowRight className="w-4 h-4" />
@@ -391,7 +429,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             <button
               type="button"
               onClick={() => onEnterWorkspace()}
-              className="w-full sm:w-auto px-9 py-4 rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-sm shadow-[0_0_35px_rgba(125,42,232,0.4)] hover:scale-[1.02] transition-all flex items-center justify-center gap-2.5 canva-tap"
+              className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_35px_rgba(125,42,232,0.4)] hover:scale-[1.02] transition-all flex items-center justify-center gap-2.5 canva-tap"
             >
               <span>Mở Không Gian Làm Việc AzTool</span>
               <ArrowRight className="w-4 h-4" />
@@ -400,7 +438,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
         </div>
 
         {/* Feature Badges */}
-        <div className="pt-6 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-semibold text-neutral-400">
+        <div className="pt-4 sm:pt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-10 text-[11px] sm:text-xs font-semibold text-neutral-400">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-[#00c4cc]" />
             <span>Xử lý 50 câu chỉ trong 1.2 giây</span>
@@ -417,23 +455,23 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </section>
 
       {/* Interactive Live Demo Teaser Section */}
-      <section id="demo" className="relative z-10 max-w-5xl mx-auto px-4 sm:px-8 pb-20">
-        <div className="rounded-3xl border border-white/10 bg-[#121524]/90 backdrop-blur-xl p-6 sm:p-8 shadow-2xl space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+      <section id="demo" className="relative z-10 max-w-5xl mx-auto px-3.5 sm:px-8 pb-14 sm:pb-20 w-full overflow-hidden">
+        <div className="rounded-2xl sm:rounded-3xl border border-white/10 bg-[#121524]/90 backdrop-blur-xl p-4 sm:p-8 shadow-2xl space-y-4 sm:space-y-6 overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/10 pb-4 sm:pb-5">
             <div>
               <span className="text-[10px] font-black tracking-wider uppercase text-[#00c4cc]">
                 TRẢI NGHIỆM TRỰC QUAN
               </span>
-              <h2 className="text-xl sm:text-2xl font-black text-white">
+              <h2 className="text-lg sm:text-2xl font-black text-white">
                 Mô Phỏng Trực Quan Quy Trình Chuẩn Hóa
               </h2>
             </div>
 
             {/* Interactive Toggle Pill */}
-            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold">
+            <div className="w-full sm:w-auto flex items-center gap-1 p-1 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-[11px] sm:text-xs font-bold overflow-x-auto no-scrollbar">
               <button
                 onClick={() => setActiveInteractiveDemo('standardize')}
-                className={`px-3 py-1.5 rounded-xl transition ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg sm:rounded-xl transition shrink-0 ${
                   activeInteractiveDemo === 'standardize'
                     ? 'bg-[#7d2ae8] text-white shadow-sm'
                     : 'text-neutral-400 hover:text-white'
@@ -443,7 +481,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               </button>
               <button
                 onClick={() => setActiveInteractiveDemo('mix')}
-                className={`px-3 py-1.5 rounded-xl transition ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg sm:rounded-xl transition shrink-0 ${
                   activeInteractiveDemo === 'mix'
                     ? 'bg-[#7d2ae8] text-white shadow-sm'
                     : 'text-neutral-400 hover:text-white'
@@ -453,7 +491,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               </button>
               <button
                 onClick={() => setActiveInteractiveDemo('audit')}
-                className={`px-3 py-1.5 rounded-xl transition ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg sm:rounded-xl transition shrink-0 ${
                   activeInteractiveDemo === 'audit'
                     ? 'bg-[#7d2ae8] text-white shadow-sm'
                     : 'text-neutral-400 hover:text-white'
@@ -465,19 +503,19 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
           </div>
 
           {/* Interactive Screen Preview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs font-mono">
             {/* Left: Input File State */}
-            <div className="p-4.5 rounded-2xl bg-black/40 border border-white/10 space-y-3">
+            <div className="p-3.5 sm:p-4.5 rounded-xl sm:rounded-2xl bg-black/40 border border-white/10 space-y-2.5 sm:space-y-3">
               <div className="flex items-center justify-between font-sans">
-                <span className="font-bold text-neutral-400 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-amber-400" />
+                <span className="font-bold text-neutral-400 flex items-center gap-1.5 text-[11px] sm:text-xs">
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
                   Đề Gốc Của Giáo Viên (Trước khi xử lý)
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <span className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   Thủ công
                 </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2 text-neutral-300">
+              <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-1.5 sm:space-y-2 text-neutral-300">
                 <div className="text-neutral-400">// Câu hỏi chưa đồng nhất format:</div>
                 <div className="font-sans">
                   <strong>Câu 1:</strong> Cho hàm số y = f(x)... Giá trị cực đại là?
@@ -488,24 +526,24 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   <div>C. -1</div>
                   <div>D. 0</div>
                 </div>
-                <div className="text-[11px] text-neutral-500 pt-1 font-sans">
+                <div className="text-[10px] sm:text-[11px] text-neutral-500 pt-1 font-sans">
                   ⚠️ Chưa có bảng đáp án tổng hợp, chưa thể trộn đề chống gian lận.
                 </div>
               </div>
             </div>
 
             {/* Right: Output File State */}
-            <div className="p-4.5 rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-3">
+            <div className="p-3.5 sm:p-4.5 rounded-xl sm:rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-2.5 sm:space-y-3">
               <div className="flex items-center justify-between font-sans">
-                <span className="font-bold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px] sm:text-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   AzTool Xử Lý Chuẩn Hóa Sau 1 Giây
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   Chuẩn 100%
                 </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-purple-900/40 space-y-2 text-neutral-300">
+              <div className="p-3 rounded-xl bg-neutral-900/80 border border-purple-900/40 space-y-1.5 sm:space-y-2 text-neutral-300">
                 <div className="text-[#00c4cc]">// Tự động đóng gói bản in &amp; Bảng X đỏ:</div>
                 <div className="grid grid-cols-4 gap-1 text-center font-sans">
                   <div className="p-1 rounded bg-white/5 border border-white/10">1. B</div>
@@ -513,7 +551,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   <div className="p-1 rounded bg-white/5 border border-white/10">3. D</div>
                   <div className="p-1 rounded bg-white/5 border border-white/10">4. C</div>
                 </div>
-                <div className="space-y-1 text-[11px] text-neutral-300 font-sans pt-1">
+                <div className="space-y-1 text-[10px] sm:text-[11px] text-neutral-300 font-sans pt-1">
                   <div className="flex items-center gap-1 text-emerald-400">
                     <Check className="w-3.5 h-3.5" /> Xuất bản Giảng viên (Có đáp án bôi đỏ)
                   </div>
@@ -528,10 +566,10 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             </div>
           </div>
 
-          <div className="flex justify-center pt-2">
+          <div className="flex justify-center pt-1 sm:pt-2">
             <button
               onClick={() => onEnterWorkspace('exam-tools')}
-              className="canva-btn-primary px-7 py-3 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg canva-tap"
+              className="w-full sm:w-auto canva-btn-primary px-6 sm:px-7 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-lg canva-tap"
             >
               <span>Thử Nghiệm Ngay Với File Của Bạn</span>
               <ArrowRight className="w-4 h-4" />
@@ -541,12 +579,12 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </section>
 
       {/* Bento Grid Features Section */}
-      <section id="features" className="relative z-10 max-w-6xl mx-auto px-4 sm:px-8 pb-24 space-y-8">
-        <div className="text-center max-w-2xl mx-auto space-y-2">
-          <span className="text-[11px] font-black uppercase tracking-wider text-[#00c4cc]">
+      <section id="features" className="relative z-10 max-w-6xl mx-auto px-3.5 sm:px-8 pb-16 sm:pb-24 space-y-6 sm:space-y-8 w-full overflow-hidden">
+        <div className="text-center max-w-2xl mx-auto space-y-1.5 sm:space-y-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#00c4cc]">
             HỆ THỐNG CÔNG CỤ SỐ ĐA NĂNG
           </span>
-          <h2 className="text-3xl sm:text-4xl font-black text-white">
+          <h2 className="text-2xl sm:text-4xl font-black text-white">
             Bộ Giải Pháp Toàn Diện Cho Nhà Giáo &amp; Khảo Thí
           </h2>
           <p className="text-xs sm:text-sm text-neutral-400">
@@ -554,24 +592,24 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {bentoFeatures.map(f => (
             <div
               key={f.id}
               onClick={() => onEnterWorkspace(f.targetTab)}
-              className={`${f.colSpan} p-7 rounded-3xl border border-white/10 bg-[#121524]/80 backdrop-blur-md hover:border-[#7d2ae8] transition-all duration-300 cursor-pointer group flex flex-col justify-between space-y-5 hover:-translate-y-1`}
+              className={`${f.colSpan} p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-white/10 bg-[#121524]/80 backdrop-blur-md hover:border-[#7d2ae8] transition-all duration-300 cursor-pointer group flex flex-col justify-between space-y-4 sm:space-y-5 hover:-translate-y-1`}
             >
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[#00c4cc]">
+                  <span className="text-[9px] sm:text-[10px] font-black px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[#00c4cc]">
                     {f.tag}
                   </span>
-                  <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-[#7d2ae8] transition-colors">
-                    <ArrowUpRight className="w-4 h-4 text-white" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-[#7d2ae8] transition-colors">
+                    <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </div>
                 </div>
 
-                <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-[#00c4cc] transition-colors">
+                <h3 className="text-lg sm:text-2xl font-black text-white group-hover:text-[#00c4cc] transition-colors">
                   {f.title}
                 </h3>
 
@@ -579,10 +617,10 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   {f.desc}
                 </p>
 
-                <div className="space-y-2 pt-2 border-t border-white/10">
+                <div className="space-y-1.5 sm:space-y-2 pt-2 border-t border-white/10">
                   {f.bullets.map((b, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-neutral-300">
-                      <CheckCircle2 className="w-4 h-4 text-[#00c4cc] shrink-0 mt-0.5" />
+                    <div key={i} className="flex items-start gap-2 text-[11px] sm:text-xs text-neutral-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#00c4cc] shrink-0 mt-0.5" />
                       <span>{b}</span>
                     </div>
                   ))}
@@ -599,9 +637,9 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </section>
 
       {/* Teacher Testimonials Section */}
-      <section id="testimonials" className="relative z-10 max-w-6xl mx-auto px-4 sm:px-8 pb-24 space-y-10">
-        <div className="text-center max-w-xl mx-auto space-y-2">
-          <span className="text-[11px] font-black uppercase tracking-wider text-[#ff66c4]">
+      <section id="testimonials" className="relative z-10 max-w-6xl mx-auto px-3.5 sm:px-8 pb-16 sm:pb-24 space-y-6 sm:space-y-10 w-full overflow-hidden">
+        <div className="text-center max-w-xl mx-auto space-y-1.5 sm:space-y-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#ff66c4]">
             ĐÁNH GIÁ TỪ CHUYÊN GIA
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-white">
@@ -609,16 +647,16 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {testimonials.map((t, idx) => (
             <div
               key={idx}
-              className="p-6 rounded-3xl border border-white/10 bg-[#121524]/60 backdrop-blur-md space-y-4 flex flex-col justify-between"
+              className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-white/10 bg-[#121524]/60 backdrop-blur-md space-y-3 sm:space-y-4 flex flex-col justify-between"
             >
-              <div className="space-y-3">
+              <div className="space-y-2.5 sm:space-y-3">
                 <div className="flex items-center gap-1">
                   {[...Array(t.stars)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                    <Star key={i} className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-amber-400 text-amber-400" />
                   ))}
                 </div>
                 <p className="text-xs text-neutral-300 leading-relaxed italic">
@@ -626,9 +664,9 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                 </p>
               </div>
 
-              <div className="border-t border-white/10 pt-3">
+              <div className="border-t border-white/10 pt-2.5 sm:pt-3">
                 <div className="font-bold text-xs text-white">{t.name}</div>
-                <div className="text-[11px] text-neutral-400">{t.role}</div>
+                <div className="text-[10px] sm:text-[11px] text-neutral-400">{t.role}</div>
               </div>
             </div>
           ))}
@@ -636,9 +674,9 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </section>
 
       {/* FAQ Accordion Section */}
-      <section id="faq" className="relative z-10 max-w-4xl mx-auto px-4 sm:px-8 pb-24 space-y-8">
-        <div className="text-center space-y-2">
-          <span className="text-[11px] font-black uppercase tracking-wider text-[#00c4cc]">
+      <section id="faq" className="relative z-10 max-w-4xl mx-auto px-3.5 sm:px-8 pb-16 sm:pb-24 space-y-6 sm:space-y-8 w-full overflow-hidden">
+        <div className="text-center space-y-1.5 sm:space-y-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#00c4cc]">
             CÂU HỎI THƯỜNG GẶP
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-white">
@@ -646,18 +684,18 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
           </h2>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2.5 sm:space-y-3">
           {faqs.map((item, idx) => {
             const isOpen = expandedFaq === idx;
             return (
               <div
                 key={idx}
-                className="rounded-2xl border border-white/10 overflow-hidden bg-[#121524]/80 backdrop-blur-md transition-colors"
+                className="rounded-xl sm:rounded-2xl border border-white/10 overflow-hidden bg-[#121524]/80 backdrop-blur-md transition-colors"
               >
                 <button
                   type="button"
                   onClick={() => setExpandedFaq(isOpen ? null : idx)}
-                  className="w-full p-4.5 text-left font-bold text-xs sm:text-sm flex items-center justify-between gap-3 text-white hover:text-[#00c4cc] transition-colors"
+                  className="w-full p-3.5 sm:p-4.5 text-left font-bold text-xs sm:text-sm flex items-center justify-between gap-3 text-white hover:text-[#00c4cc] transition-colors"
                 >
                   <span>{item.q}</span>
                   {isOpen ? (
@@ -667,7 +705,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                   )}
                 </button>
                 {isOpen && (
-                  <div className="px-4.5 pb-4 text-xs text-neutral-400 leading-relaxed border-t border-white/10 pt-3 font-normal">
+                  <div className="px-3.5 sm:px-4.5 pb-3.5 sm:pb-4 text-xs text-neutral-400 leading-relaxed border-t border-white/10 pt-2.5 sm:pt-3 font-normal">
                     {item.a}
                   </div>
                 )}
@@ -678,14 +716,14 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
       </section>
 
       {/* Modern SaaS Footer */}
-      <footer className="relative z-10 border-t border-white/10 bg-[#0d0f18] py-12 text-xs text-neutral-500 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+      <footer className="relative z-10 border-t border-white/10 bg-[#0d0f18] py-8 sm:py-12 text-xs text-neutral-500 mt-auto w-full overflow-hidden">
+        <div className="max-w-6xl mx-auto px-3.5 sm:px-8 space-y-6 sm:space-y-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
             <div className="cursor-pointer" onClick={() => scrollToSection('hero')}>
               <DeQLogo size="sm" showSubtitle />
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-semibold text-neutral-300">
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs font-semibold text-neutral-300">
               <button
                 onClick={() => onEnterWorkspace('exam-tools')}
                 className="hover:text-[#00c4cc] transition-colors"
@@ -713,13 +751,13 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             </div>
           </div>
 
-          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-neutral-400">
+          <div className="border-t border-white/10 pt-4 sm:pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-neutral-400">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#00c4cc]" />
               <span>© 2026 AzTool Studio (AzTool.vercel.app). All rights reserved.</span>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
               <a
                 href="mailto:lenhatduy.vietnam@gmail.com"
                 className="hover:text-[#00c4cc] transition-colors flex items-center gap-1 text-neutral-400"
@@ -736,84 +774,189 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
         </div>
       </footer>
 
-      {/* Fallback Email Sign-in Modal */}
+      {/* Premium Login Modal (Google OAuth 1-Tap & Instant Gmail Sign-In) */}
       {showEmailModal && (
         <div
           role="dialog"
           aria-modal="true"
           onClick={() => setShowEmailModal(false)}
-          className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter"
+          className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-md flex items-center justify-center p-3.5 sm:p-4 modal-backdrop-enter"
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="canva-card rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 border border-white/20 modal-card-enter bg-[#121524]"
+            className="relative w-full max-w-md rounded-2xl sm:rounded-3xl border border-white/15 bg-[#0f121e]/95 backdrop-blur-2xl shadow-2xl p-5 sm:p-7 space-y-4 sm:space-y-5 modal-card-enter overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-white/10 pb-3.5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl canva-gradient-bg text-white flex items-center justify-center shadow-xs">
-                  <Mail className="w-4 h-4" />
+            {/* Ambient Background Glow Orb */}
+            <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-gradient-to-tr from-[#7d2ae8]/30 via-[#00c4cc]/20 to-transparent blur-3xl pointer-events-none" />
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3.5 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl canva-gradient-bg text-white flex items-center justify-center shadow-lg shadow-purple-500/25 shrink-0">
+                  <Lock className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-black text-white">
-                    Đăng Nhập Tài Khoản AzTool
+                  <h3 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
+                    <span>Đăng Nhập Tài Khoản</span>
+                    <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-[#00c4cc]/15 text-[#00c4cc] border border-[#00c4cc]/30">
+                      AzTool
+                    </span>
                   </h3>
                   <p className="text-[11px] text-neutral-400">
-                    Nhập địa chỉ Gmail để tiếp tục vào không gian làm việc
+                    Đăng nhập để vào không gian làm việc & nhận 5 lượt dùng/ngày
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowEmailModal(false)}
-                className="w-7 h-7 rounded-xl flex items-center justify-center hover:bg-white/10 text-neutral-400 hover:text-white transition canva-tap"
+                className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/10 text-neutral-400 hover:text-white transition canva-tap shrink-0"
+                aria-label="Đóng cửa sổ"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleEmailContinue} className="space-y-3.5 text-xs">
-              <div className="space-y-1.5">
-                <label className="font-bold text-neutral-300 block">
-                  Địa chỉ Email Google:
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={emailInput}
-                  onChange={e => setEmailInput(e.target.value)}
-                  placeholder="tenban@gmail.com"
-                  className="w-full p-3 rounded-xl border border-white/10 bg-neutral-900 text-white focus:outline-none focus:ring-2 focus:ring-[#7d2ae8]"
-                />
+            {/* Primary Action: 1-Tap Google OAuth */}
+            <div className="space-y-3 relative z-10">
+              <button
+                type="button"
+                onClick={handleModalGoogleOAuth}
+                disabled={isModalOAuthLoading}
+                className="w-full py-3 px-4 rounded-xl bg-white text-neutral-900 hover:bg-neutral-100 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-md shadow-white/10 transition-all active:scale-[0.99] canva-tap border border-neutral-200"
+              >
+                {isModalOAuthLoading ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
+                    <span>Đang kết nối Google...</span>
+                  </div>
+                ) : (
+                  <>
+                    <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.57H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.43l3.99-3.14z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.57l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+                      />
+                    </svg>
+                    <span>Tiếp tục với Tài khoản Google (1-Chạm)</span>
+                  </>
+                )}
+              </button>
+
+              {/* Modern Divider */}
+              <div className="flex items-center gap-3 py-1">
+                <div className="h-px bg-white/10 flex-1" />
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider text-center">
+                  Hoặc đăng nhập nhanh bằng Gmail
+                </span>
+                <div className="h-px bg-white/10 flex-1" />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-bold text-neutral-300 block">
-                  Tên hiển thị (Tùy chọn):
-                </label>
-                <input
-                  type="text"
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  placeholder="VD: Thầy Nguyễn Văn A"
-                  className="w-full p-3 rounded-xl border border-white/10 bg-neutral-900 text-white focus:outline-none focus:ring-2 focus:ring-[#7d2ae8]"
-                />
-              </div>
+              {/* Email Form */}
+              <form onSubmit={handleEmailContinue} className="space-y-3.5 text-xs">
+                <div className="space-y-1.5">
+                  <label className="font-bold text-neutral-200 block text-[11px] sm:text-xs">
+                    Địa chỉ Email Google (Gmail): <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="email"
+                      required
+                      inputMode="email"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={emailInput}
+                      onChange={e => setEmailInput(e.target.value)}
+                      placeholder="tenban@gmail.com"
+                      className="w-full pl-10 pr-3.5 py-2.5 sm:py-3 rounded-xl border border-white/10 bg-neutral-900/90 text-white placeholder-neutral-500 focus:outline-none focus:border-[#00c4cc] focus:ring-2 focus:ring-[#00c4cc]/20 transition text-xs sm:text-sm"
+                    />
+                  </div>
+                </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEmailModal(false)}
-                  className="px-4 py-2.5 rounded-xl font-semibold bg-white/5 hover:bg-white/10 text-neutral-300 canva-tap"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="canva-btn-primary px-6 py-2.5 rounded-xl font-bold shadow-sm canva-tap"
-                >
-                  Tiếp Tục
-                </button>
-              </div>
-            </form>
+                {/* Quick Auto-fill Pills */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-neutral-400 block font-semibold">
+                    Đăng nhập nhanh mẫu:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('lenhatduy.vietnam@gmail.com', 'Admin Lê Nhật Duy')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[11px] font-semibold transition canva-tap"
+                    >
+                      <span>👑</span>
+                      <span>Admin (Lê Nhật Duy)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('giaovien.toan@gmail.com', 'Thầy Nguyễn Văn A')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[11px] font-semibold transition canva-tap"
+                    >
+                      <span>👨‍🏫</span>
+                      <span>Giáo viên Demo</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-bold text-neutral-200 block text-[11px] sm:text-xs">
+                    Tên hiển thị (Tùy chọn):
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={nameInput}
+                      onChange={e => setNameInput(e.target.value)}
+                      placeholder="VD: Thầy Nguyễn Văn A"
+                      className="w-full pl-10 pr-3.5 py-2.5 sm:py-3 rounded-xl border border-white/10 bg-neutral-900/90 text-white placeholder-neutral-500 focus:outline-none focus:border-[#7d2ae8] focus:ring-2 focus:ring-[#7d2ae8]/20 transition text-xs sm:text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Quota & Sync Notice */}
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 text-[11px] text-neutral-300 flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5 leading-relaxed">
+                    <p className="font-semibold text-white">5 lượt miễn phí mỗi ngày • Tự động kích hoạt</p>
+                    <p className="text-neutral-400 text-[10px]">
+                      Hệ thống tự động đồng bộ phân quyền từ Nhà trường và cập nhật mốc 5 lượt mới vào 00:00 hằng ngày.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailModal(false)}
+                    className="px-4 py-2.5 rounded-xl font-semibold bg-white/5 hover:bg-white/10 text-neutral-300 transition canva-tap"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="canva-btn-primary px-5 sm:px-6 py-2.5 rounded-xl font-extrabold shadow-lg shadow-purple-500/20 flex items-center gap-2 canva-tap text-white"
+                  >
+                    <span>Vào Workspace</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

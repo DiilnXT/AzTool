@@ -75,9 +75,9 @@ export function Navbar({
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/95 dark:bg-[#11131a]/95 backdrop-blur-xl border-b border-neutral-200/80 dark:border-neutral-800/90 shadow-2xs transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-15 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-3">
         {/* Left: Brand Logo & Status Pill */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
             onClick={() => (onOpenLanding ? onOpenLanding() : setActiveTab('ai-audit'))}
             className="flex items-center gap-2 group canva-tap text-left"
@@ -97,12 +97,12 @@ export function Navbar({
         </div>
 
         {/* Right: Quick Controls & User Profile */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Button: Kho Tính Năng / Hub */}
           {onOpenHub && (
             <button
               onClick={onOpenHub}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold transition canva-tap ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold transition canva-tap ${
                 activeTab === 'hub'
                   ? 'border-[#7d2ae8] bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 ring-2 ring-[#7d2ae8]/20'
                   : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8]'
@@ -130,17 +130,17 @@ export function Navbar({
             onClick={toggleTheme}
             aria-label="Đổi giao diện Sáng / Tối"
             title={theme === 'dark' ? 'Chuyển sang Giao diện Sáng' : 'Chuyển sang Giao diện Tối'}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8] text-xs font-bold transition canva-tap"
+            className="flex items-center gap-1 p-2 sm:px-3 sm:py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8] text-xs font-bold transition canva-tap"
           >
             {theme === 'dark' ? (
               <>
-                <Sun className="w-4 h-4 text-amber-400" />
-                <span className="hidden lg:inline">Sáng</span>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden lg:inline text-xs">Sáng</span>
               </>
             ) : (
               <>
-                <Moon className="w-4 h-4 text-indigo-600" />
-                <span className="hidden lg:inline">Tối</span>
+                <Moon className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="hidden lg:inline text-xs">Tối</span>
               </>
             )}
           </button>
@@ -152,19 +152,19 @@ export function Navbar({
             title={isSuperAdmin ? 'Cấu hình AI & Hệ thống' : 'Tùy chỉnh hiển thị cá nhân'}
             className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-600 dark:text-neutral-300 hover:text-[#7d2ae8] hover:border-[#7d2ae8] transition canva-tap"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           {/* User Account */}
           {user ? (
-            <div className="flex items-center gap-2 pl-2 border-l border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-2 border-l border-neutral-200 dark:border-neutral-800">
               {/* Live Daily Quota Pill (5 uses/day: 00h00 - 23h59) */}
               {!isSuperAdmin && (
                 <button
                   type="button"
                   onClick={() => openLimitModal('Kiểm tra hạn mức sử dụng trong ngày')}
                   title="Giới hạn 5 lượt sử dụng miễn phí / ngày (Tính từ 00h00 đến 23h59)"
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition canva-tap ${
+                  className={`flex items-center gap-1 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-[10px] sm:text-[11px] font-black transition canva-tap ${
                     isDailyLimitReached
                       ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-300 animate-pulse'
                       : dailyRemaining <= 1
@@ -174,14 +174,15 @@ export function Navbar({
                 >
                   {isDailyLimitReached ? (
                     <>
-                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>Hết limit: {dailyUsed}/{dailyLimit}</span>
+                      <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
+                      <span className="sm:hidden">{dailyUsed}/{dailyLimit}</span>
+                      <span className="hidden sm:inline">Hết limit: {dailyUsed}/{dailyLimit}</span>
                     </>
                   ) : (
                     <>
-                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <Zap className="w-3 h-3 text-amber-500 shrink-0" />
                       <span>
-                        Hôm nay: {dailyUsed}/{dailyLimit} lượt
+                        <span className="hidden sm:inline">Hôm nay: </span>{dailyUsed}/{dailyLimit}<span className="hidden sm:inline"> lượt</span>
                       </span>
                     </>
                   )}
