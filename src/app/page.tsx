@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ToastProvider, useToast } from '@/components/ToastProvider';
 import { Navbar, TopWorkspaceTab } from '@/components/Navbar';
 import { LandingPage } from '@/components/LandingPage';
+import { SkillHubGrid, SkillItem } from '@/components/SkillHubGrid';
 import { ExamStandardizer } from '@/components/ExamStandardizer';
 import { ExamMixer } from '@/components/ExamMixer';
 import { AiAuditor } from '@/components/AiAuditor';
@@ -324,7 +325,8 @@ function MainApp() {
     openLimitModal,
   } = useAuth();
   const toast = useToast();
-  const [activeTab, setActiveTabState] = useState<TopWorkspaceTab>('exam-tools');
+  // Default to 'hub' so user sees the wide, beautiful skill grid on entering!
+  const [activeTab, setActiveTabState] = useState<TopWorkspaceTab>('hub');
   const [examSubTab, setExamSubTabState] = useState<'ai-audit' | 'standardize' | 'mix'>('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -494,110 +496,127 @@ function MainApp() {
         setActiveTab={setActiveTab}
         openSettings={() => setIsSettingsOpen(true)}
         onOpenLanding={() => setShowLandingPage(true)}
+        onOpenHub={() => setActiveTab('hub')}
         questionsCount={questions.length}
         answeredCount={answeredCount}
       />
 
-      {/* High-Contrast Feature Module Dock */}
-      <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs">
-        <div className="max-w-7xl mx-auto">
-          <div
-            className={`grid grid-cols-2 sm:grid-cols-2 ${
-              isSuperAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'
-            } gap-2.5 sm:gap-3`}
-          >
-            {navCards.map(card => {
-              const Icon = card.icon;
-              const isActive = activeTab === card.id;
-              return (
+      {/* High-Contrast Feature Module Dock (Shown when NOT on Hub) */}
+      {activeTab !== 'hub' && (
+        <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-4 px-4 sm:px-6 shadow-xs animate-in fade-in duration-200">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between pb-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab('hub')}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 text-xs font-black hover:bg-purple-100 dark:hover:bg-purple-900/50 transition canva-tap"
+              >
+                <span>← Kho Tính Năng (Tất cả Skills)</span>
+              </button>
+
+              <span className="hidden sm:inline text-[11px] font-bold text-neutral-400">
+                Nhấp thẻ để chuyển đổi module nhanh
+              </span>
+            </div>
+
+            <div
+              className={`grid grid-cols-2 sm:grid-cols-2 ${
+                isSuperAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'
+              } gap-2.5 sm:gap-3`}
+            >
+              {navCards.map(card => {
+                const Icon = card.icon;
+                const isActive = activeTab === card.id;
+                return (
+                  <button
+                    key={card.id}
+                    onClick={() => setActiveTab(card.id)}
+                    className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap ${
+                      isActive
+                        ? `${card.activeRing} ring-2 shadow-md scale-[1.01]`
+                        : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#171a26] hover:border-purple-400/60 dark:hover:border-purple-500/50 hover:shadow-sm'
+                    }`}
+                  >
+                    <div
+                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500">
+                          {card.step}
+                        </span>
+                        {card.requirePerm && (
+                          <span
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                              card.unlocked
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
+                            }`}
+                          >
+                            {card.unlocked ? (
+                              <>
+                                <Unlock className="w-2.5 h-2.5" /> Mở
+                              </>
+                            ) : (
+                              <>
+                                <Lock className="w-2.5 h-2.5" /> Khóa
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
+                        {card.title}
+                      </div>
+                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                        {card.desc}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {/* Card 5: Exclusive Admin Command Center */}
+              {isSuperAdmin && (
                 <button
-                  key={card.id}
-                  onClick={() => setActiveTab(card.id)}
-                  className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap ${
-                    isActive
-                      ? `${card.activeRing} ring-2 shadow-md scale-[1.01]`
-                      : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#171a26] hover:border-purple-400/60 dark:hover:border-purple-500/50 hover:shadow-sm'
+                  onClick={() => setActiveTab('admin')}
+                  className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 xl:col-span-1 ${
+                    activeTab === 'admin'
+                      ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
+                      : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
                   }`}
                 >
-                  <div
-                    className={`w-10 h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
-                  >
-                    <Icon className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Crown className="w-5 h-5" />
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500">
-                        {card.step}
+                      <span className="text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
+                        ADMIN DUY LÊ
                       </span>
-                      {card.requirePerm && (
-                        <span
-                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
-                            card.unlocked
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                          }`}
-                        >
-                          {card.unlocked ? (
-                            <>
-                              <Unlock className="w-2.5 h-2.5" /> Mở
-                            </>
-                          ) : (
-                            <>
-                              <Lock className="w-2.5 h-2.5" /> Khóa
-                            </>
-                          )}
-                        </span>
-                      )}
+                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-500 text-white">
+                        PRO
+                      </span>
                     </div>
 
                     <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
-                      {card.title}
+                      Trung Tâm Quản Trị
                     </div>
                     <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                      {card.desc}
+                      Phân quyền &amp; Kho đề thi
                     </div>
                   </div>
                 </button>
-              );
-            })}
-
-            {/* Card 5: Exclusive Admin Command Center */}
-            {isSuperAdmin && (
-              <button
-                onClick={() => setActiveTab('admin')}
-                className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap col-span-2 xl:col-span-1 ${
-                  activeTab === 'admin'
-                    ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
-                    : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
-                }`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-                  <Crown className="w-5 h-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
-                      ADMIN DUY LÊ
-                    </span>
-                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-500 text-white">
-                      PRO
-                    </span>
-                  </div>
-
-                  <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
-                    Trung Tâm Quản Trị
-                  </div>
-                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                    Phân quyền &amp; Kho đề thi
-                  </div>
-                </div>
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-20 relative z-20 space-y-5">
@@ -677,6 +696,15 @@ function MainApp() {
         )}
 
         <div key={activeTab} className="tab-enter">
+          {/* TAB 0: SKILL HUB GRID (Default when opening Workspace) */}
+          {activeTab === 'hub' && (
+            <SkillHubGrid
+              onSelectSkill={skillId => {
+                setActiveTab(skillId);
+              }}
+            />
+          )}
+
           {/* TAB 1: TOOLS SOẠN ĐỀ (GỘP PHÂN HỆ 1, 2, 3) */}
           {activeTab === 'exam-tools' && (
             <div className="space-y-6">

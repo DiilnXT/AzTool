@@ -15,9 +15,11 @@ import {
   ShieldCheck,
   Zap,
   AlertTriangle,
+  LayoutGrid,
 } from 'lucide-react';
 
 export type TopWorkspaceTab =
+  | 'hub'
   | 'exam-tools'
   | 'thesis-auditor'
   | 'pdf-studio'
@@ -32,14 +34,17 @@ interface NavbarProps {
   setActiveTab: (tab: TopWorkspaceTab) => void;
   openSettings: () => void;
   onOpenLanding?: () => void;
+  onOpenHub?: () => void;
   questionsCount?: number;
   answeredCount?: number;
 }
 
 export function Navbar({
+  activeTab,
   setActiveTab,
   openSettings,
   onOpenLanding,
+  onOpenHub,
   questionsCount = 0,
   answeredCount = 0,
 }: NavbarProps) {
@@ -93,14 +98,30 @@ export function Navbar({
 
         {/* Right: Quick Controls & User Profile */}
         <div className="flex items-center gap-2">
+          {/* Button: Kho Tính Năng / Hub */}
+          {onOpenHub && (
+            <button
+              onClick={onOpenHub}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold transition canva-tap ${
+                activeTab === 'hub'
+                  ? 'border-[#7d2ae8] bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 ring-2 ring-[#7d2ae8]/20'
+                  : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8]'
+              }`}
+              title="Danh mục các công cụ & tính năng"
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-[#7d2ae8]" />
+              <span className="hidden sm:inline">Kho Tính Năng</span>
+            </button>
+          )}
+
           {onOpenLanding && (
             <button
               onClick={onOpenLanding}
-              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8] text-xs font-bold transition canva-tap"
+              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8] text-xs font-bold transition canva-tap"
               title="Trang giới thiệu AzTool"
             >
-              <Home className="w-3.5 h-3.5 text-[#7d2ae8]" />
-              <span>Trang Giới Thiệu</span>
+              <Home className="w-3.5 h-3.5 text-[#00c4cc]" />
+              <span>Trang Chủ</span>
             </button>
           )}
 
