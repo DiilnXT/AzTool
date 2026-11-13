@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ToastProvider';
 import { DeQLogo } from '@/components/DeQLogo';
+import { SpotlightCard } from '@/components/SpotlightCard';
 import {
   Sparkles,
   FileCheck,
@@ -368,21 +369,24 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
         id="hero"
         className="relative z-10 pt-10 sm:pt-24 pb-14 sm:pb-28 px-3.5 sm:px-8 max-w-6xl mx-auto text-center space-y-5 sm:space-y-8 w-full overflow-hidden"
       >
-        <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-[10px] sm:text-xs font-bold text-neutral-300 shadow-sm animate-pulse">
-          <Sparkles className="w-3.5 h-3.5 text-[#00c4cc]" />
-          <span>Phiên Bản Quốc Tế Thế Hệ Mới • Trợ Lý Sư Phạm</span>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.06] border border-white/15 backdrop-blur-md text-[10px] sm:text-xs font-bold text-neutral-200 shadow-sm">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00c4cc] opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00c4cc]" />
+          </span>
+          <span>AzTool Studio 2026 • Trợ Lý Soạn Đề &amp; Đề Án Word</span>
         </div>
 
         <div className="pt-1">
           <DeQLogo size="lg" showSubtitle={false} />
         </div>
 
-        <h1 className="text-2xl sm:text-5xl lg:text-7xl font-black tracking-tight leading-tight sm:leading-[1.1] max-w-5xl mx-auto text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-100 to-neutral-400">
+        <h1 className="text-2xl sm:text-5xl lg:text-7xl font-black tracking-tight leading-tight sm:leading-[1.08] max-w-5xl mx-auto text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-100 to-neutral-400">
           Tự Động Hóa Đề Thi &amp; Soát Đề Án Word Chuẩn Xác 100%
         </h1>
 
-        <p className="text-xs sm:text-base md:text-lg text-neutral-400 max-w-3xl mx-auto leading-relaxed">
-          Giải phóng hoàn toàn thời gian thủ công cho Thầy Cô. Tự động nhận diện đáp án bôi đậm, gạch chân, soát lỗi đề bằng AI, trộn đề cân bằng 25% A-B-C-D và kiểm duyệt danh mục giáo trình dài hàng trăm trang.
+        <p className="text-xs sm:text-base md:text-lg text-neutral-400 max-w-2xl mx-auto leading-relaxed">
+          Soát lỗi đề bằng AI, chuẩn hóa đáp án bôi đậm/gạch chân 1 chạm, trộn đề cân bằng 25% A-B-C-D và rà soát giáo trình hàng trăm trang chỉ trong vài giây.
         </p>
 
         {/* Hero Actions */}
@@ -393,7 +397,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={isLoggingIn}
-                className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-white text-neutral-950 font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 sm:gap-3 canva-tap"
+                className="spell-shimmer-btn spell-spring w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-white text-neutral-950 font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(255,255,255,0.22)] flex items-center justify-center gap-2.5 sm:gap-3 cursor-pointer"
               >
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -419,7 +423,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
               <button
                 type="button"
                 onClick={() => onEnterWorkspace('exam-tools')}
-                className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(125,42,232,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 canva-tap"
+                className="spell-shimmer-btn spell-spring w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(125,42,232,0.35)] flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>Vào Làm Việc Ngay</span>
                 <ArrowRight className="w-4 h-4" />
@@ -429,7 +433,7 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
             <button
               type="button"
               onClick={() => onEnterWorkspace()}
-              className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_35px_rgba(125,42,232,0.4)] hover:scale-[1.02] transition-all flex items-center justify-center gap-2.5 canva-tap"
+              className="spell-shimmer-btn spell-spring w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white font-black text-xs sm:text-sm shadow-[0_0_35px_rgba(125,42,232,0.4)] flex items-center justify-center gap-2.5 cursor-pointer"
             >
               <span>Mở Không Gian Làm Việc AzTool</span>
               <ArrowRight className="w-4 h-4" />
@@ -594,12 +598,12 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {bentoFeatures.map(f => (
-            <div
+            <SpotlightCard
               key={f.id}
               onClick={() => onEnterWorkspace(f.targetTab)}
-              className={`${f.colSpan} p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-white/10 bg-[#121524]/80 backdrop-blur-md hover:border-[#7d2ae8] transition-all duration-300 cursor-pointer group flex flex-col justify-between space-y-4 sm:space-y-5 hover:-translate-y-1`}
+              className={`${f.colSpan} spell-spring p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-white/10 bg-[#121524]/80 backdrop-blur-md hover:border-[#7d2ae8]/80 cursor-pointer group flex flex-col justify-between space-y-4 sm:space-y-5`}
             >
-              <div className="space-y-3 sm:space-y-4">
+              <div className="relative z-10 space-y-3 sm:space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] sm:text-[10px] font-black px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[#00c4cc]">
                     {f.tag}
@@ -627,11 +631,11 @@ export function LandingPage({ onEnterWorkspace }: LandingPageProps) {
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center gap-2 text-xs font-bold text-[#00c4cc] group-hover:translate-x-1 transition-transform">
+              <div className="relative z-10 pt-2 flex items-center gap-2 text-xs font-bold text-[#00c4cc] group-hover:translate-x-1 transition-transform">
                 <span>Khám phá công cụ này</span>
                 <ArrowRight className="w-4 h-4" />
               </div>
-            </div>
+            </SpotlightCard>
           ))}
         </div>
       </section>

@@ -16,6 +16,7 @@ import {
   Zap,
   AlertTriangle,
   LayoutGrid,
+  Search,
 } from 'lucide-react';
 
 export type TopWorkspaceTab =
@@ -35,6 +36,7 @@ interface NavbarProps {
   openSettings: () => void;
   onOpenLanding?: () => void;
   onOpenHub?: () => void;
+  onOpenCommandPalette?: () => void;
   questionsCount?: number;
   answeredCount?: number;
 }
@@ -45,6 +47,7 @@ export function Navbar({
   openSettings,
   onOpenLanding,
   onOpenHub,
+  onOpenCommandPalette,
   questionsCount = 0,
   answeredCount = 0,
 }: NavbarProps) {
@@ -98,11 +101,27 @@ export function Navbar({
 
         {/* Right: Quick Controls & User Profile */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Quick Command Palette Trigger (Ctrl+K) */}
+          {onOpenCommandPalette && (
+            <button
+              type="button"
+              onClick={onOpenCommandPalette}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900/80 text-neutral-600 dark:text-neutral-300 hover:border-[#7d2ae8] hover:text-[#7d2ae8] dark:hover:text-[#00c4cc] text-xs font-bold transition spell-spring cursor-pointer"
+              title="Tìm nhanh tính năng (Ctrl+K)"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Tìm nhanh</span>
+              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[9px] font-mono text-neutral-400">
+                ⌘K
+              </kbd>
+            </button>
+          )}
+
           {/* Button: Kho Tính Năng / Hub */}
           {onOpenHub && (
             <button
               onClick={onOpenHub}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold transition canva-tap ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold transition spell-spring cursor-pointer ${
                 activeTab === 'hub'
                   ? 'border-[#7d2ae8] bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 ring-2 ring-[#7d2ae8]/20'
                   : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8]'
@@ -111,17 +130,6 @@ export function Navbar({
             >
               <LayoutGrid className="w-3.5 h-3.5 text-[#7d2ae8]" />
               <span className="hidden sm:inline">Kho Tính Năng</span>
-            </button>
-          )}
-
-          {onOpenLanding && (
-            <button
-              onClick={onOpenLanding}
-              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/70 text-neutral-700 dark:text-neutral-200 hover:border-[#7d2ae8] text-xs font-bold transition canva-tap"
-              title="Trang giới thiệu AzTool"
-            >
-              <Home className="w-3.5 h-3.5 text-[#00c4cc]" />
-              <span>Trang Chủ</span>
             </button>
           )}
 

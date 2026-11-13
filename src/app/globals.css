@@ -429,6 +429,101 @@
   animation: canvaShimmer 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+/* ========================================================
+   DESIGN SPELLS MICRO-INTERACTIONS (Spotlight, Shimmer, Spring)
+   ======================================================== */
+.spell-spotlight {
+  position: relative;
+  overflow: hidden;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+}
+
+.spell-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    420px circle at var(--mouse-x) var(--mouse-y),
+    rgba(125, 42, 232, 0.12),
+    rgba(0, 196, 204, 0.06) 40%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dark .spell-spotlight::before {
+  background: radial-gradient(
+    420px circle at var(--mouse-x) var(--mouse-y),
+    rgba(0, 196, 204, 0.16),
+    rgba(125, 42, 232, 0.1) 40%,
+    transparent 70%
+  );
+}
+
+.spell-spotlight:hover::before {
+  opacity: 1;
+}
+
+.spell-shimmer-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.spell-shimmer-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  transform: skewX(-20deg);
+  transition: none;
+  pointer-events: none;
+}
+
+.spell-shimmer-btn:hover::after {
+  left: 160%;
+  transition: left 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spell-spring {
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.spell-spring:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.spell-spring:active:not(:disabled) {
+  transform: scale(0.96) translateY(0);
+}
+
+@keyframes spellReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.spell-reveal {
+  opacity: 0;
+  animation: spellReveal 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Canva Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 7px;

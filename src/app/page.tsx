@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ToastProvider, useToast } from '@/components/ToastProvider';
 import { Navbar, TopWorkspaceTab } from '@/components/Navbar';
 import { LandingPage } from '@/components/LandingPage';
 import { SkillHubGrid, SkillItem } from '@/components/SkillHubGrid';
+import { CommandPalette } from '@/components/CommandPalette';
 import { ExamStandardizer } from '@/components/ExamStandardizer';
 import { ExamMixer } from '@/components/ExamMixer';
 import { AiAuditor } from '@/components/AiAuditor';
@@ -329,7 +330,19 @@ function MainApp() {
   const [activeTab, setActiveTabState] = useState<TopWorkspaceTab>('hub');
   const [examSubTab, setExamSubTabState] = useState<'ai-audit' | 'standardize' | 'mix'>('ai-audit');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Core Exam State
   const [examMetadata, setExamMetadata] = useState<ExamMetadata>(SAMPLE_METADATA);
@@ -497,121 +510,59 @@ function MainApp() {
         openSettings={() => setIsSettingsOpen(true)}
         onOpenLanding={() => setShowLandingPage(true)}
         onOpenHub={() => setActiveTab('hub')}
+        onOpenCommandPalette={() => setIsCommandOpen(true)}
         questionsCount={questions.length}
         answeredCount={answeredCount}
       />
 
-      {/* High-Contrast Feature Module Dock (Shown when NOT on Hub) */}
+      {/* Sleek Single-Row Tool Switcher Bar (Shown when NOT on Hub) */}
       {activeTab !== 'hub' && (
-        <section className="w-full bg-white/90 dark:bg-[#12151f]/90 border-b border-neutral-200/80 dark:border-neutral-800/80 py-3 sm:py-4 px-3 sm:px-6 shadow-xs animate-in fade-in duration-200 overflow-hidden">
-          <div className="max-w-7xl mx-auto space-y-2.5">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setActiveTab('hub')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 text-xs font-black hover:bg-purple-100 dark:hover:bg-purple-900/50 transition canva-tap"
-              >
-                <span>← Kho Tính Năng (Tất cả Skills)</span>
-              </button>
-
-              <span className="hidden sm:inline text-[11px] font-bold text-neutral-400">
-                Nhấp thẻ để chuyển đổi module nhanh
-              </span>
-            </div>
-
-            {/* Mobile swipeable strip / Desktop responsive grid */}
-            <div
-              className={`flex sm:grid sm:grid-cols-2 ${
-                isSuperAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'
-              } gap-2 sm:gap-3 overflow-x-auto sm:overflow-x-visible no-scrollbar pb-1.5 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0`}
+        <section className="w-full bg-white/90 dark:bg-[#12151f]/90 backdrop-blur-md border-b border-neutral-200/80 dark:border-neutral-800/80 py-2 px-3 sm:px-6 sticky top-15 sm:top-16 z-30">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => setActiveTab('hub')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-[#7d2ae8] dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/70 text-xs font-black hover:bg-purple-100 dark:hover:bg-purple-900/50 transition spell-spring shrink-0 cursor-pointer"
             >
+              <span>← Kho Tính Năng</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
               {navCards.map(card => {
                 const Icon = card.icon;
                 const isActive = activeTab === card.id;
                 return (
                   <button
                     key={card.id}
+                    type="button"
                     onClick={() => setActiveTab(card.id)}
-                    className={`group relative flex items-start gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap shrink-0 w-[230px] sm:w-auto ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all spell-spring shrink-0 cursor-pointer ${
                       isActive
-                        ? `${card.activeRing} ring-2 shadow-md scale-[1.01]`
-                        : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#171a26] hover:border-purple-400/60 dark:hover:border-purple-500/50 hover:shadow-sm'
+                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 shadow-sm'
+                        : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/10'
                     }`}
                   >
-                    <div
-                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br ${card.gradient} text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform`}
-                    >
-                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-[9px] sm:text-[10px] font-black tracking-wider text-neutral-400 dark:text-neutral-500 truncate">
-                          {card.step}
-                        </span>
-                        {card.requirePerm && (
-                          <span
-                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold shrink-0 ${
-                              card.unlocked
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                            }`}
-                          >
-                            {card.unlocked ? (
-                              <>
-                                <Unlock className="w-2.5 h-2.5" /> Mở
-                              </>
-                            ) : (
-                              <>
-                                <Lock className="w-2.5 h-2.5" /> Khóa
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
-                        {card.title}
-                      </div>
-                      <div className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                        {card.desc}
-                      </div>
-                    </div>
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="whitespace-nowrap">{card.title}</span>
+                    {card.requirePerm && !card.unlocked && (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    )}
                   </button>
                 );
               })}
 
-              {/* Card 5: Exclusive Admin Command Center */}
               {isSuperAdmin && (
                 <button
+                  type="button"
                   onClick={() => setActiveTab('admin')}
-                  className={`group relative flex items-start gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-2xl border-2 text-left transition-all duration-200 canva-tap shrink-0 w-[230px] sm:w-auto col-span-2 xl:col-span-1 ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all spell-spring shrink-0 cursor-pointer ${
                     activeTab === 'admin'
-                      ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md scale-[1.01]'
-                      : 'border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50/40 via-white to-rose-50/30 dark:from-amber-950/20 dark:via-[#171a26] dark:to-rose-950/20 hover:border-amber-500 hover:shadow-sm'
+                      ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-sm'
+                      : 'text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50'
                   }`}
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-                    <Crown className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] sm:text-[10px] font-black tracking-wider text-amber-600 dark:text-amber-400">
-                        ADMIN DUY LÊ
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-500 text-white">
-                        PRO
-                      </span>
-                    </div>
-
-                    <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate mt-0.5">
-                      Trung Tâm Quản Trị
-                    </div>
-                    <div className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                      Phân quyền &amp; Kho đề thi
-                    </div>
-                  </div>
+                  <Crown className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Quản Trị</span>
                 </button>
               )}
             </div>
@@ -621,8 +572,8 @@ function MainApp() {
 
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-20 relative z-20 space-y-4 sm:space-y-5">
-        {/* Daily Usage Quota Bar (5 uses/day: 00h00 - 23h59) for Logged-in Google Users */}
-        {!isSuperAdmin && user && (
+        {/* Daily Usage Quota Alert (Shown only when low or exhausted so workspace stays clean) */}
+        {!isSuperAdmin && user && (isDailyLimitReached || dailyRemaining <= 1) && (
           <div
             className={`p-3.5 sm:p-4 rounded-2xl border-2 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
               isDailyLimitReached
@@ -703,15 +654,16 @@ function MainApp() {
               onSelectSkill={skillId => {
                 setActiveTab(skillId);
               }}
+              onOpenCommandPalette={() => setIsCommandOpen(true)}
             />
           )}
 
           {/* TAB 1: TOOLS SOẠN ĐỀ (GỘP PHÂN HỆ 1, 2, 3) */}
           {activeTab === 'exam-tools' && (
-            <div className="space-y-6">
-              {/* Sub-Tab Selector Bar for Phân Hệ 1, 2, 3 */}
-              <div className="canva-card p-3 sm:p-4 rounded-3xl border border-purple-200/80 dark:border-purple-900/40 bg-white dark:bg-[#151823] shadow-sm">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="space-y-5">
+              {/* Sleek Segmented Control Pill for Phân Hệ 1, 2, 3 */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="inline-flex items-center p-1.5 rounded-2xl bg-white dark:bg-[#151823] border border-neutral-200/90 dark:border-neutral-800 shadow-xs overflow-x-auto no-scrollbar max-w-full">
                   {examSubTabs.map(sub => {
                     const SubIcon = sub.icon;
                     const isSubActive = examSubTab === sub.id;
@@ -720,43 +672,27 @@ function MainApp() {
                         key={sub.id}
                         type="button"
                         onClick={() => setExamSubTab(sub.id)}
-                        className={`flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all canva-tap ${
+                        className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
                           isSubActive
-                            ? 'border-[#7d2ae8] bg-purple-50/80 dark:bg-purple-950/40 shadow-sm ring-2 ring-[#7d2ae8]/20'
-                            : 'border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 hover:border-purple-300'
+                            ? 'bg-gradient-to-r from-[#7d2ae8] to-[#00c4cc] text-white shadow-sm'
+                            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100/80 dark:hover:bg-white/5'
                         }`}
                       >
-                        <div
-                          className={`w-9 h-9 rounded-xl bg-gradient-to-br ${sub.gradient} text-white flex items-center justify-center shrink-0 shadow-xs`}
-                        >
-                          <SubIcon className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[10px] font-black text-[#7d2ae8] dark:text-purple-300">
-                              {sub.step}
-                            </span>
-                            <span
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                sub.unlocked
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              }`}
-                            >
-                              {sub.unlocked ? 'Đã mở' : 'Khóa'}
-                            </span>
-                          </div>
-                          <div className="text-xs sm:text-sm font-black text-neutral-900 dark:text-white truncate">
-                            {sub.title}
-                          </div>
-                          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
-                            {sub.desc}
-                          </div>
-                        </div>
+                        <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span>{sub.title}</span>
+                        {!sub.unlocked && (
+                          <Lock className={`w-3 h-3 shrink-0 ${isSubActive ? 'text-amber-200' : 'text-amber-500'}`} />
+                        )}
                       </button>
                     );
                   })}
                 </div>
+
+                {questions.length > 0 && (
+                  <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                    <span>Đang giữ {questions.length} câu hỏi trong phiên làm việc</span>
+                  </div>
+                )}
               </div>
 
               {/* Active Exam Sub-Tool Content */}
@@ -845,6 +781,16 @@ function MainApp() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Quick Command Palette (Ctrl+K / Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandOpen}
+        onClose={() => setIsCommandOpen(false)}
+        setActiveTab={setActiveTab}
+        setExamSubTab={setExamSubTab}
+        openSettings={() => setIsSettingsOpen(true)}
+        onOpenLanding={() => setShowLandingPage(true)}
       />
 
       {/* Daily Limit Notification Modal (5 uses/day: 00h00 - 23h59) */}
